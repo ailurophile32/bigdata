@@ -366,6 +366,16 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             (750, 1050, "近红外")
         ]
         
+        # 定义马卡龙色系映射，对应各个光谱区域的真实颜色
+        region_colors = {
+            "紫外-蓝光": "#9370DB",  # 紫罗兰色
+            "蓝光": "#6495ED",      # 亮蓝色
+            "绿光": "#98FB98",      # 淡绿色
+            "黄光": "#FFD700",      # 金黄色
+            "红光": "#FF6347",      # 番茄红
+            "近红外": "#F08080"     # 浅珊瑚色
+        }
+        
         # 创建区域分析表格
         region_table = QTableWidget()
         region_table.setColumnCount(7)
@@ -412,15 +422,15 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 region_stats.append((region_name, mean_val, std_val, max_val, max_wl, min_val, min_wl))
                 valid_regions.append((wl_min, wl_max, region_name))
                 
-                # 在图表上添加区域
-                ax.axvspan(wl_min, wl_max, alpha=0.2, color=plt.cm.tab10(len(valid_regions) % 10))
+                # 添加区域背景，使用马卡龙色系映射
+                region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
+                ax.axvspan(wl_min, wl_max, alpha=0.25, color=region_color)
                 
-                # 添加区域标签（位置调整到顶部）
-                y_range = ax.get_ylim()
-                y_pos = y_range[0] + (y_range[1] - y_range[0]) * 0.95
-                ax.text((wl_min + wl_max) / 2, y_pos,
-                        region_name, ha='center', fontsize=8,
-                        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+                # 添加区域标签
+                ax.text((wl_min + wl_max) / 2, ax.get_ylim()[1] * 0.95,
+                       region_name, ha='center', fontsize=8,
+                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color, 
+                                boxstyle='round,pad=0.2', linewidth=1))
                 
                 # 标记最大值和最小值
                 ax.plot(max_wl, max_val, 'ro', markersize=4)
@@ -498,14 +508,26 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         sender = self.sender()
         wl_min = sender.property("wl_min")
         wl_max = sender.property("wl_max")
+        region_name = sender.text()
+        
+        # 获取区域对应的马卡龙颜色
+        region_colors = {
+            "紫外-蓝光": "#9370DB",  # 紫罗兰色
+            "蓝光": "#6495ED",      # 亮蓝色
+            "绿光": "#98FB98",      # 淡绿色
+            "黄光": "#FFD700",      # 金黄色
+            "红光": "#FF6347",      # 番茄红
+            "近红外": "#F08080"     # 浅珊瑚色
+        }
+        color = region_colors.get(region_name, "yellow")
         
         # 调用父窗口中的画布来高亮显示区域
         if hasattr(self.parent, 'canvas') and self.parent.canvas is not None:
             try:
-                # 使用可视化的颜色
+                # 使用对应区域的马卡龙颜色
                 self.parent.canvas.highlight_curve_segment(
                     self.curve_index, wl_min, wl_max, 
-                    color='yellow', alpha=0.5
+                    color=color, alpha=0.5
                 )
             except Exception as e:
                 print(f"高亮区域出错: {e}")
@@ -763,6 +785,62 @@ class SpectralCanvas(FigureCanvas):
         self.highlighted_line = None
         self.original_linewidths = {}
         
+        # 添加光谱区域背景
+        # 定义常见光谱区域
+        regions = [
+            (350, 450, "紫外-蓝光"),
+            (450, 500, "蓝光"),
+            (500, 570, "绿光"),
+            (570, 620, "黄光"),
+            (620, 750, "红光"),
+            (750, 1050, "近红外")
+        ]
+        
+        # 添加马卡龙色系背景
+        region_colors = {
+            "紫外-蓝光": "#9370DB",  # 紫罗兰色
+            "蓝光": "#6495ED",      # 亮蓝色
+            "绿光": "#98FB98",      # 淡绿色
+            "黄光": "#FFD700",      # 金黄色
+            "红光": "#FF6347",      # 番茄红
+            "近红外": "#F08080"     # 浅珊瑚色
+        }
+        
+        # 获取全局波长范围
+        global_min_wl = float('inf')
+        global_max_wl = float('-inf')
+        
+        for label, (wavelength, reflectance) in spectra_dict.items():
+            mask = ~np.isnan(reflectance)
+            valid_wavelength = wavelength[mask]
+            if len(valid_wavelength) > 0:
+                global_min_wl = min(global_min_wl, np.min(valid_wavelength))
+                global_max_wl = max(global_max_wl, np.max(valid_wavelength))
+        
+        # 确保有有效的全局波长范围
+        if global_min_wl != float('inf') and global_max_wl != float('-inf'):
+            # 为每个区域添加背景色
+            for wl_min, wl_max, region_name in regions:
+                # 检查区域是否在全局波长范围内
+                if wl_min <= global_max_wl and wl_max >= global_min_wl:
+                    # 调整区域边界以适应全局范围
+                    effective_wl_min = max(wl_min, global_min_wl)
+                    effective_wl_max = min(wl_max, global_max_wl)
+                    
+                    # 添加区域背景
+                    region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
+                    self.axes.axvspan(effective_wl_min, effective_wl_max, alpha=0.25, color=region_color)
+                    
+                    # 为了错开标签，交替使用两种不同的y位置
+                    y_pos = 0.02 if regions.index((wl_min, wl_max, region_name)) % 2 == 0 else 0.07
+                    
+                    # 添加小的区域标签，使用交替的位置
+                    self.axes.text((effective_wl_min + effective_wl_max) / 2, y_pos, 
+                               region_name, ha='center', va='bottom', fontsize=8,
+                               transform=self.axes.get_xaxis_transform(), color='black',
+                               bbox=dict(facecolor='white', alpha=0.7, edgecolor=region_color, 
+                                        boxstyle='round,pad=0.2', linewidth=1))
+        
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
         
@@ -778,7 +856,7 @@ class SpectralCanvas(FigureCanvas):
             # 保存线条引用和原始线宽
             self.lines.append(line)
             self.original_linewidths[line] = line.get_linewidth()
-            
+        
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_ylabel('反射率 (%)')
         self.axes.set_title(title)
@@ -957,24 +1035,52 @@ class SpectralCanvas(FigureCanvas):
             y_range = self.axes.get_ylim()
             y_min, y_max = y_range
             
-            # 绘制填充区域
-            self.axes.axvspan(x_start, x_end, color=color, alpha=alpha, zorder=0)
+            # 绘制填充区域，边框采用较深的颜色
+            self.axes.axvspan(x_start, x_end, color=color, alpha=alpha, zorder=0, 
+                              edgecolor=color, linewidth=1.5)
             
             # 确保曲线在高亮区域的上层
             line.set_zorder(10)
             
-            # 添加区域标记
-            mid_x = (x_start + x_end) / 2
-            self.axes.axvline(x_start, color='black', linestyle='--', alpha=0.5, linewidth=0.5)
-            self.axes.axvline(x_end, color='black', linestyle='--', alpha=0.5, linewidth=0.5)
+            # 添加区域标记，使用更清晰的虚线样式
+            self.axes.axvline(x_start, color='black', linestyle='--', alpha=0.6, linewidth=0.8)
+            self.axes.axvline(x_end, color='black', linestyle='--', alpha=0.6, linewidth=0.8)
             
-            # 添加波长标签
+            # 添加波长标签，使用更美观的标注
             self.axes.annotate(f"{x_start:.0f}nm", (x_start, y_min + (y_max-y_min)*0.05), 
-                              ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.7)
+                              ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.8,
+                              bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7))
             self.axes.annotate(f"{x_end:.0f}nm", (x_end, y_min + (y_max-y_min)*0.05), 
-                              ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.7)
+                              ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.8,
+                              bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7))
+            
+            # 居中添加区域名称标签
+            region_name = self._get_region_name(x_start, x_end)
+            if region_name:
+                self.axes.annotate(region_name, ((x_start + x_end)/2, y_max - (y_max-y_min)*0.05),
+                                  ha='center', va='top', fontsize=9, fontweight='bold',
+                                  bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.8))
             
             self.draw()
+            
+    def _get_region_name(self, x_start, x_end):
+        """根据波长范围获取区域名称"""
+        # 定义常见的光谱区域
+        regions = [
+            (350, 450, "紫外-蓝光"),
+            (450, 500, "蓝光"),
+            (500, 570, "绿光"),
+            (570, 620, "黄光"),
+            (620, 750, "红光"),
+            (750, 1050, "近红外")
+        ]
+        
+        # 查找最匹配的区域
+        for wl_min, wl_max, name in regions:
+            # 如果起始和结束波长接近某个预定义区域，则返回该区域名称
+            if abs(wl_min - x_start) < 10 and abs(wl_max - x_end) < 10:
+                return name
+        return ""
 
 
 class SpectralViewer(QMainWindow):
@@ -1531,6 +1637,16 @@ class SpectralViewer(QMainWindow):
             (750, 1050, "近红外")
         ]
         
+        # 定义马卡龙色系映射，对应各个光谱区域的真实颜色
+        region_colors = {
+            "紫外-蓝光": "#9370DB",  # 紫罗兰色
+            "蓝光": "#6495ED",      # 亮蓝色
+            "绿光": "#98FB98",      # 淡绿色
+            "黄光": "#FFD700",      # 金黄色
+            "红光": "#FF6347",      # 番茄红
+            "近红外": "#F08080"     # 浅珊瑚色
+        }
+        
         # 创建不同色彩方案
         colors = plt.cm.tab10(np.linspace(0, 1, len(spectra_dict)))
         
@@ -1568,12 +1684,14 @@ class SpectralViewer(QMainWindow):
                 effective_wl_max = min(wl_max, global_max_wl)
                 
                 # 添加区域背景
-                ax.axvspan(effective_wl_min, effective_wl_max, alpha=0.2, color=plt.cm.Pastel1(i % 9))
+                region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
+                ax.axvspan(effective_wl_min, effective_wl_max, alpha=0.25, color=region_color)
                 
                 # 添加区域标签
                 ax.text((effective_wl_min + effective_wl_max) / 2, ax.get_ylim()[1] * 0.95,
-                       region_name, ha='center', fontsize=11, fontweight='bold',
-                       bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=2))
+                       region_name, ha='center', fontsize=8,
+                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color, 
+                                boxstyle='round,pad=0.2', linewidth=1))
         
         # 收集每个区域的分析数据
         region_analysis_data = []
@@ -1741,6 +1859,18 @@ class SpectralViewer(QMainWindow):
                     region_ax.set_ylabel('反射率 (%)', fontsize=12)
                     region_ax.set_title(f'{region_name} ({wl_min}-{wl_max}nm) 区域详细分析', fontsize=14, fontweight='bold')
                     region_ax.grid(True, linestyle='--', alpha=0.7)
+                    
+                    # 添加马卡龙色系背景
+                    region_colors = {
+                        "紫外-蓝光": "#9370DB",  # 紫罗兰色
+                        "蓝光": "#6495ED",      # 亮蓝色
+                        "绿光": "#98FB98",      # 淡绿色
+                        "黄光": "#FFD700",      # 金黄色
+                        "红光": "#FF6347",      # 番茄红
+                        "近红外": "#F08080"     # 浅珊瑚色
+                    }
+                    region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
+                    region_ax.axvspan(wl_min, wl_max, alpha=0.25, color=region_color)
                     
                     # 获取当前区域内的y值范围
                     all_y_values = []
