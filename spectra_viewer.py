@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QMenu, QAction, QTextEdit, QDialog, QTableWidget,
                             QTableWidgetItem, QTabWidget, QHeaderView, QStyle)
 from PyQt5.QtCore import Qt, QDir, QTextCodec, QPoint
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtGui import QColor, QFont, QBrush
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 import random
 import matplotlib
@@ -120,6 +120,10 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         self.add_derivative_tab()
         self.add_region_analysis_tab()
         self.add_features_tab()
+        
+        # 如果存在标准曲线，添加比对分析标签页
+        if hasattr(self.parent, 'reference_curve') and self.parent.reference_curve is not None:
+            self.add_reference_comparison_tab()
         
         self.content_layout.addWidget(self.tab_widget)
         
@@ -547,7 +551,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                     pass
 
     def add_features_tab(self):
-        """添加特征分析标签页"""
+        """添加特征点分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
@@ -556,163 +560,466 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
         
-        if len(valid_reflectance) < 10:
-            layout.addWidget(QLabel("数据点不足，无法进行特征分析"))
-            self.tab_widget.addTab(tab, "特征分析")
+        if len(valid_reflectance) < 5:
+            # 数据点太少，无法进行特征点分析
+            layout.addWidget(QLabel("数据点不足，无法进行特征点分析。"))
+            self.tab_widget.addTab(tab, "特征点分析")
             return
         
         # 创建图表
-        fig = Figure(figsize=(9, 9))
-        
-        # 反射率曲线及峰值检测
-        ax1 = fig.add_subplot(211)
-        ax1.plot(valid_wavelength, valid_reflectance, '-', linewidth=1.5)
-        ax1.set_xlabel('波长 (nm)')
-        ax1.set_ylabel('反射率 (%)')
-        ax1.set_title('特征峰值检测')
-        ax1.grid(True, linestyle='--', alpha=0.7)
-        
-        # 确定窗口大小 - 必须是奇数且小于数据点数
-        window_length = min(11, len(valid_reflectance) // 5 * 2 + 1)
-        if window_length % 2 == 0 and window_length > 3:
-            window_length -= 1
-        
-        feature_info = ""
-        
-        if window_length >= 3:
-            # 平滑处理
-            smoothed = savgol_filter(valid_reflectance, window_length, 2)
-            ax1.plot(valid_wavelength, smoothed, '--', linewidth=1, alpha=0.7, label='平滑曲线')
-            
-            # 峰值检测参数
-            prominence = (np.max(smoothed) - np.min(smoothed)) * 0.05  # 5% 的总范围
-            width = max(3, len(smoothed) // 30)  # 至少3个点，或者数据点数的1/30
-            distance = max(5, len(smoothed) // 20)  # 至少5个点，或者数据点数的1/20
-            
-            # 查找峰值
-            peaks, peak_properties = find_peaks(smoothed, prominence=prominence, width=width, distance=distance)
-            # 查找谷值
-            troughs, trough_properties = find_peaks(-smoothed, prominence=prominence, width=width, distance=distance)
-            
-            # 提取峰值和谷值
-            peak_x = valid_wavelength[peaks]
-            peak_y = smoothed[peaks]
-            trough_x = valid_wavelength[troughs]
-            trough_y = smoothed[troughs]
-            
-            # 添加峰值和谷值标记
-            ax1.plot(peak_x, peak_y, 'ro', label='峰值')
-            ax1.plot(trough_x, trough_y, 'go', label='谷值')
-            
-            # 标记峰值和谷值
-            for i, (x, y) in enumerate(zip(peak_x, peak_y)):
-                ax1.annotate(f"P{i+1}", (x, y), xytext=(10, 10), 
-                           textcoords='offset points', 
-                           arrowprops=dict(arrowstyle='->'))
-            
-            for i, (x, y) in enumerate(zip(trough_x, trough_y)):
-                ax1.annotate(f"T{i+1}", (x, y), xytext=(10, -15), 
-                           textcoords='offset points', 
-                           arrowprops=dict(arrowstyle='->'))
-            
-            # 添加特征信息
-            if len(peaks) > 0:
-                feature_info += "检测到的峰值特征:\n"
-                for i, (x, y) in enumerate(zip(peak_x, peak_y)):
-                    peak_prom = peak_properties['prominences'][i]
-                    peak_width = peak_properties['widths'][i]
-                    feature_info += f"  峰值 P{i+1}: 波长={x:.1f}nm, 反射率={y:.2f}%, "
-                    feature_info += f"显著度={peak_prom:.2f}, 宽度={peak_width:.1f}\n"
-            
-            if len(troughs) > 0:
-                feature_info += "\n检测到的谷值特征:\n"
-                for i, (x, y) in enumerate(zip(trough_x, trough_y)):
-                    trough_prom = trough_properties['prominences'][i]
-                    trough_width = trough_properties['widths'][i]
-                    feature_info += f"  谷值 T{i+1}: 波长={x:.1f}nm, 反射率={y:.2f}%, "
-                    feature_info += f"显著度={trough_prom:.2f}, 宽度={trough_width:.1f}\n"
-            
-            # 添加可能的材料属性特征信息
-            feature_info += "\n波段特征解读:\n"
-            
-            # 检查常见光谱特征
-            common_features = [
-                # (波长范围, 特征描述)
-                ((450, 500), "蓝光范围强反射可能表明对象呈现蓝色外观"),
-                ((500, 570), "绿光范围强反射可能表明对象呈现绿色外观"),
-                ((620, 750), "红光范围强反射可能表明对象呈现红色外观"),
-                ((780, 900), "近红外范围特征可能与植物健康状况或含水量相关"),
-                ((900, 950), "此范围的吸收特征常与水分含量相关"),
-                ((450, 520), "蓝色吸收带常见于含叶绿素的样本"),
-                ((660, 680), "红色吸收带常见于含叶绿素的样本"),
-                ((550, 560), "绿色反射峰常见于植物样本")
-            ]
-            
-            # 检查每个特征
-            for (wl_min, wl_max), description in common_features:
-                # 计算此波长范围的平均反射率
-                mask = (valid_wavelength >= wl_min) & (valid_wavelength <= wl_max)
-                if np.sum(mask) > 5:  # 确保有足够多的点
-                    region_avg = np.mean(valid_reflectance[mask])
-                    global_avg = np.mean(valid_reflectance)
-                    
-                    # 检查是否有峰值在此范围内
-                    peaks_in_range = np.sum((peak_x >= wl_min) & (peak_x <= wl_max))
-                    troughs_in_range = np.sum((trough_x >= wl_min) & (trough_x <= wl_max))
-                    
-                    if peaks_in_range > 0 and region_avg > global_avg * 1.1:
-                        feature_info += f"  • {wl_min}-{wl_max}nm: 检测到显著反射峰，{description}\n"
-                    elif troughs_in_range > 0 and region_avg < global_avg * 0.9:
-                        feature_info += f"  • {wl_min}-{wl_max}nm: 检测到显著吸收谷，与{description}相反\n"
-            
-            # 异常检测 (离群点)
-            ax2 = fig.add_subplot(212)
-            ax2.plot(valid_wavelength, valid_reflectance, '-', linewidth=1.5)
-            ax2.set_xlabel('波长 (nm)')
-            ax2.set_ylabel('反射率 (%)')
-            ax2.set_title('异常点检测')
-            ax2.grid(True, linestyle='--', alpha=0.7)
-            
-            # 使用移动平均线作为基准
-            trend = gaussian_filter1d(valid_reflectance, sigma=len(valid_reflectance)//20)
-            ax2.plot(valid_wavelength, trend, '--', linewidth=1, alpha=0.7, label='趋势线')
-            
-            # 计算残差
-            residuals = valid_reflectance - trend
-            # 计算残差的标准差
-            residual_std = np.std(residuals)
-            
-            # 找出超过2个标准差的点
-            outlier_mask = np.abs(residuals) > 2.5 * residual_std
-            outlier_x = valid_wavelength[outlier_mask]
-            outlier_y = valid_reflectance[outlier_mask]
-            
-            if len(outlier_x) > 0:
-                ax2.plot(outlier_x, outlier_y, 'rx', markersize=8, label='异常点')
-                
-                # 添加异常点信息
-                feature_info += "\n检测到的异常点:\n"
-                for i, (x, y) in enumerate(zip(outlier_x, outlier_y)):
-                    feature_info += f"  异常点 {i+1}: 波长={x:.1f}nm, 反射率={y:.2f}%\n"
-            
-            ax1.legend()
-            ax2.legend()
-        else:
-            feature_info = "数据点不足，无法进行特征分析"
-        
-        fig.tight_layout()
+        fig = Figure(figsize=(9, 6))
         canvas = FigureCanvas(fig)
         
-        # 创建特征信息文本显示
-        info_text = QTextEdit()
-        info_text.setReadOnly(True)
-        info_text.setFont(QFont("monospace", 9))
-        info_text.setText(feature_info)
+        # 平滑处理
+        window_length = min(15, len(valid_reflectance) - (len(valid_reflectance) % 2) - 1)
+        if window_length < 5:
+            window_length = 5
         
-        layout.addWidget(canvas, 2)
-        layout.addWidget(info_text, 1)
+        smoothed = savgol_filter(valid_reflectance, window_length, 3)
         
-        self.tab_widget.addTab(tab, "特征分析")
+        # 查找峰值和谷值
+        # 使用相对高度参数来确保只找到明显的峰值和谷值
+        peaks, _ = find_peaks(smoothed, height=np.mean(smoothed), distance=5, prominence=0.5)
+        valleys, _ = find_peaks(-smoothed, distance=5, prominence=0.5)
+        
+        # 主图形：显示曲线、峰值和谷值
+        ax = fig.add_subplot(111)
+        ax.plot(valid_wavelength, valid_reflectance, 'b-', alpha=0.5, label='原始数据')
+        ax.plot(valid_wavelength, smoothed, 'g-', label='平滑曲线')
+        
+        # 标记峰值
+        if len(peaks) > 0:
+            ax.plot(valid_wavelength[peaks], smoothed[peaks], 'ro', label='峰值')
+            for i, peak in enumerate(peaks):
+                ax.annotate(f"{valid_wavelength[peak]:.0f}nm",
+                           (valid_wavelength[peak], smoothed[peak]),
+                           xytext=(0, 10), textcoords='offset points',
+                           ha='center', fontsize=8)
+        
+        # 标记谷值
+        if len(valleys) > 0:
+            ax.plot(valid_wavelength[valleys], smoothed[valleys], 'mo', label='谷值')
+            for i, valley in enumerate(valleys):
+                ax.annotate(f"{valid_wavelength[valley]:.0f}nm",
+                           (valid_wavelength[valley], smoothed[valley]),
+                           xytext=(0, -15), textcoords='offset points',
+                           ha='center', fontsize=8)
+        
+        ax.set_xlabel('波长 (nm)')
+        ax.set_ylabel('反射率 (%)')
+        ax.set_title(f'{self.curve_name} - 特征点分析')
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.legend()
+        
+        # 创建特征点表格
+        features_table = QTableWidget()
+        features_table.setColumnCount(3)
+        features_table.setHorizontalHeaderLabels(["特征点类型", "波长 (nm)", "反射率 (%)"])
+        features_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        # 计算表格行数
+        row_count = len(peaks) + len(valleys)
+        features_table.setRowCount(row_count)
+        
+        # 填充峰值数据
+        for i, peak in enumerate(peaks):
+            features_table.setItem(i, 0, QTableWidgetItem("峰值"))
+            features_table.setItem(i, 1, QTableWidgetItem(f"{valid_wavelength[peak]:.1f}"))
+            features_table.setItem(i, 2, QTableWidgetItem(f"{smoothed[peak]:.2f}"))
+        
+        # 填充谷值数据
+        for i, valley in enumerate(valleys):
+            row = i + len(peaks)
+            features_table.setItem(row, 0, QTableWidgetItem("谷值"))
+            features_table.setItem(row, 1, QTableWidgetItem(f"{valid_wavelength[valley]:.1f}"))
+            features_table.setItem(row, 2, QTableWidgetItem(f"{smoothed[valley]:.2f}"))
+        
+        # 添加特征点描述
+        features_description = QLabel(
+            f"<p>检测到 <b>{len(peaks)}</b> 个峰值和 <b>{len(valleys)}</b> 个谷值。</p>"
+            f"<p>峰值代表光谱中反射率局部最大的波长位置，通常与材料的吸收特性相关。</p>"
+            f"<p>谷值代表光谱中反射率局部最小的波长位置，通常指示材料对特定波长光的强吸收。</p>"
+        )
+        features_description.setWordWrap(True)
+        
+        # 添加控件到布局
+        layout.addWidget(canvas)
+        layout.addWidget(features_description)
+        layout.addWidget(QLabel("<b>特征点数据表</b>"))
+        layout.addWidget(features_table)
+        
+        # 添加到标签页
+        self.tab_widget.addTab(tab, "特征点分析")
+
+    def add_reference_comparison_tab(self):
+        """添加与标准曲线比对分析标签页"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # 获取标准曲线数据
+        reference_name = self.parent.reference_curve
+        clean_ref_name = reference_name.replace(" [标准]", "")
+        
+        if clean_ref_name not in self.parent.spectra_data:
+            layout.addWidget(QLabel(f"未找到标准曲线：{clean_ref_name}"))
+            self.tab_widget.addTab(tab, "标准比对")
+            return
+            
+        # 获取标准曲线数据
+        ref_wavelength, ref_reflectance = self.parent.spectra_data[clean_ref_name]
+        
+        # 过滤NaN值
+        mask = ~np.isnan(self.reflectance)
+        valid_wavelength = self.wavelength[mask]
+        valid_reflectance = self.reflectance[mask]
+        
+        ref_mask = ~np.isnan(ref_reflectance)
+        valid_ref_wavelength = ref_wavelength[ref_mask]
+        valid_ref_reflectance = ref_reflectance[ref_mask]
+        
+        if len(valid_reflectance) < 5 or len(valid_ref_reflectance) < 5:
+            layout.addWidget(QLabel("数据点不足，无法进行比对分析。"))
+            self.tab_widget.addTab(tab, "标准比对")
+            return
+        
+        # 创建比对分析结果的HTML
+        html_result = "<h2>标准曲线比对分析</h2>"
+        html_result += f"<p>当前曲线：<b>{self.curve_name}</b></p>"
+        html_result += f"<p>标准曲线：<b>{clean_ref_name}</b></p>"
+        
+        # 1. 找到两条曲线共同的波长范围
+        min_wl = max(np.min(valid_wavelength), np.min(valid_ref_wavelength))
+        max_wl = min(np.max(valid_wavelength), np.max(valid_ref_wavelength))
+        
+        # 限制在共同波长范围内
+        current_mask = (valid_wavelength >= min_wl) & (valid_wavelength <= max_wl)
+        ref_mask = (valid_ref_wavelength >= min_wl) & (valid_ref_wavelength <= max_wl)
+        
+        # 检查是否有足够的重叠数据
+        if np.sum(current_mask) < 5 or np.sum(ref_mask) < 5:
+            html_result += "<p style='color:red'>警告：两条曲线的波长范围重叠度不足，比对结果可能不准确。</p>"
+        
+        # 创建图表容器
+        fig_container = QWidget()
+        fig_layout = QVBoxLayout(fig_container)
+        
+        # 2. 创建直观对比图
+        fig1 = Figure(figsize=(10, 6))
+        canvas1 = FigureCanvas(fig1)
+        
+        # 绘制对比图
+        ax1 = fig1.add_subplot(111)
+        ax1.plot(valid_wavelength, valid_reflectance, 'b-', label=self.curve_name)
+        ax1.plot(valid_ref_wavelength, valid_ref_reflectance, 'r-', label=f"{clean_ref_name} (标准)")
+        ax1.set_xlabel('波长 (nm)')
+        ax1.set_ylabel('反射率 (%)')
+        ax1.set_title('光谱曲线对比')
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        ax1.legend()
+        
+        # 3. 需要插值处理使两条曲线在相同波长点上进行比较
+        # 使用当前曲线的波长点作为参考，插值计算标准曲线在这些点上的值
+        common_wavelength = valid_wavelength[current_mask]
+        current_reflectance = valid_reflectance[current_mask]
+        
+        # 对标准曲线进行插值
+        ref_interp = np.interp(common_wavelength, valid_ref_wavelength, valid_ref_reflectance)
+        
+        # 4. 计算差异曲线
+        diff = current_reflectance - ref_interp
+        abs_diff = np.abs(diff)
+        rel_diff = np.abs(diff / ref_interp) * 100  # 相对差异百分比
+        
+        # 5. 计算统计指标
+        rmse = np.sqrt(np.mean(diff**2))  # 均方根误差
+        mae = np.mean(abs_diff)  # 平均绝对误差
+        max_diff = np.max(abs_diff)  # 最大绝对差异
+        max_diff_wl = common_wavelength[np.argmax(abs_diff)]  # 最大差异处的波长
+        
+        # 计算相关系数
+        corr_coef = np.corrcoef(current_reflectance, ref_interp)[0, 1]
+        
+        # 计算光谱角映射(SAM)
+        norm_current = current_reflectance / np.linalg.norm(current_reflectance)
+        norm_ref = ref_interp / np.linalg.norm(ref_interp)
+        sam = np.arccos(np.clip(np.dot(norm_current, norm_ref), -1.0, 1.0))
+        sam_deg = np.degrees(sam)
+        
+        # 添加统计指标表
+        html_result += "<h3>统计比对指标</h3>"
+        html_result += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
+        html_result += "<tr><th>指标</th><th>数值</th><th>解释</th></tr>"
+        html_result += f"<tr><td>相关系数</td><td>{corr_coef:.4f}</td><td>衡量两曲线的线性相关性，值越接近1表示相关性越高</td></tr>"
+        html_result += f"<tr><td>均方根误差(RMSE)</td><td>{rmse:.4f}%</td><td>衡量曲线间的平均差异程度</td></tr>"
+        html_result += f"<tr><td>平均绝对误差(MAE)</td><td>{mae:.4f}%</td><td>曲线间的平均绝对差异</td></tr>"
+        html_result += f"<tr><td>最大绝对差异</td><td>{max_diff:.4f}% (波长: {max_diff_wl:.0f}nm)</td><td>两曲线间的最大差异点</td></tr>"
+        html_result += f"<tr><td>光谱角距离(SAM)</td><td>{sam_deg:.2f}°</td><td>衡量光谱形状相似度，值越小越相似</td></tr>"
+        html_result += "</table>"
+        
+        # 绘制差异曲线
+        fig2 = Figure(figsize=(10, 6))
+        canvas2 = FigureCanvas(fig2)
+        
+        # 创建两个子图
+        ax2 = fig2.add_subplot(211)
+        ax2.plot(common_wavelength, diff, 'g-')
+        ax2.axhline(y=0, color='r', linestyle='--')
+        ax2.set_xlabel('波长 (nm)')
+        ax2.set_ylabel('差异 (%)')
+        ax2.set_title('光谱差异曲线 (当前曲线 - 标准曲线)')
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        
+        # 绘制相对差异曲线
+        ax3 = fig2.add_subplot(212)
+        ax3.plot(common_wavelength, rel_diff, 'm-')
+        ax3.set_xlabel('波长 (nm)')
+        ax3.set_ylabel('相对差异 (%)')
+        ax3.set_title('相对差异百分比')
+        ax3.grid(True, linestyle='--', alpha=0.7)
+        
+        # 添加图表说明
+        fig2.tight_layout()
+        
+        # 添加到布局
+        fig_layout.addWidget(canvas1)
+        fig_layout.addWidget(canvas2)
+        
+        # 创建文本结果显示
+        text_result = QTextEdit()
+        text_result.setReadOnly(True)
+        text_result.setHtml(html_result)
+        
+        # 创建区域分析比对
+        html_region_analysis = "<h3>光谱区域对比分析</h3>"
+        html_region_analysis += "<p>不同波长区域的特性比对：</p>"
+        
+        # 定义常见的光谱区域
+        regions = [
+            (350, 450, "紫外-蓝光"),
+            (450, 500, "蓝光"),
+            (500, 570, "绿光"),
+            (570, 620, "黄光"),
+            (620, 750, "红光"),
+            (750, 1050, "近红外")
+        ]
+        
+        # 为每个区域分析两条曲线的差异
+        html_region_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
+        html_region_analysis += "<tr><th>区域</th><th>波长范围</th><th>当前曲线均值</th><th>标准曲线均值</th><th>差异</th><th>相对差异</th></tr>"
+        
+        region_diff_data = []
+        for wl_min, wl_max, region_name in regions:
+            # 检查区域是否在共同波长范围内
+            if wl_min <= max_wl and wl_max >= min_wl:
+                # 获取区域内的数据
+                region_mask = (common_wavelength >= wl_min) & (common_wavelength <= wl_max)
+                if np.sum(region_mask) > 0:
+                    current_region = current_reflectance[region_mask]
+                    ref_region = ref_interp[region_mask]
+                    
+                    # 计算区域内的均值
+                    current_mean = np.mean(current_region)
+                    ref_mean = np.mean(ref_region)
+                    
+                    # 计算差异
+                    diff_mean = current_mean - ref_mean
+                    rel_diff_mean = (diff_mean / ref_mean) * 100 if ref_mean != 0 else 0
+                    
+                    # 添加到表格
+                    html_region_analysis += f"<tr><td>{region_name}</td><td>{wl_min}-{wl_max}nm</td>"
+                    html_region_analysis += f"<td>{current_mean:.2f}%</td><td>{ref_mean:.2f}%</td>"
+                    html_region_analysis += f"<td>{diff_mean:.2f}%</td><td>{rel_diff_mean:.2f}%</td></tr>"
+                    
+                    region_diff_data.append((wl_min, wl_max, region_name, diff_mean, rel_diff_mean))
+        
+        html_region_analysis += "</table>"
+        
+        # 添加特征点比对
+        html_feature_analysis = "<h3>特征点比对分析</h3>"
+        
+        # 平滑处理
+        window_length = min(15, len(valid_reflectance) - (len(valid_reflectance) % 2) - 1)
+        if window_length < 5:
+            window_length = 5
+        
+        current_smoothed = savgol_filter(valid_reflectance, window_length, 3)
+        ref_smoothed = savgol_filter(valid_ref_reflectance, window_length, 3)
+        
+        # 查找峰值和谷值
+        current_peaks, _ = find_peaks(current_smoothed, distance=5, prominence=0.5)
+        current_valleys, _ = find_peaks(-current_smoothed, distance=5, prominence=0.5)
+        
+        ref_peaks, _ = find_peaks(ref_smoothed, distance=5, prominence=0.5)
+        ref_valleys, _ = find_peaks(-ref_smoothed, distance=5, prominence=0.5)
+        
+        # 绘制特征点比对图
+        fig3 = Figure(figsize=(10, 6))
+        canvas3 = FigureCanvas(fig3)
+        
+        ax4 = fig3.add_subplot(111)
+        ax4.plot(valid_wavelength, current_smoothed, 'b-', label=f"{self.curve_name} (平滑)")
+        ax4.plot(valid_ref_wavelength, ref_smoothed, 'r-', label=f"{clean_ref_name} (平滑)")
+        
+        # 标记当前曲线的峰值和谷值
+        if len(current_peaks) > 0:
+            ax4.plot(valid_wavelength[current_peaks], current_smoothed[current_peaks], 'bo', label='当前峰值')
+        if len(current_valleys) > 0:
+            ax4.plot(valid_wavelength[current_valleys], current_smoothed[current_valleys], 'bv', label='当前谷值')
+        
+        # 标记标准曲线的峰值和谷值
+        if len(ref_peaks) > 0:
+            ax4.plot(valid_ref_wavelength[ref_peaks], ref_smoothed[ref_peaks], 'ro', label='标准峰值')
+        if len(ref_valleys) > 0:
+            ax4.plot(valid_ref_wavelength[ref_valleys], ref_smoothed[ref_valleys], 'rv', label='标准谷值')
+        
+        ax4.set_xlabel('波长 (nm)')
+        ax4.set_ylabel('反射率 (%)')
+        ax4.set_title('特征点比对')
+        ax4.grid(True, linestyle='--', alpha=0.7)
+        ax4.legend()
+        
+        fig3.tight_layout()
+        
+        # 特征点比对表格
+        html_feature_analysis += "<p>峰值比对：</p>"
+        html_feature_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
+        html_feature_analysis += "<tr><th>当前曲线峰值波长</th><th>当前峰值反射率</th><th>最接近的标准峰值波长</th><th>标准峰值反射率</th><th>波长差异</th></tr>"
+        
+        # 对每个当前曲线的峰值，找到最接近的标准曲线峰值
+        for peak in current_peaks:
+            current_peak_wl = valid_wavelength[peak]
+            current_peak_refl = current_smoothed[peak]
+            
+            # 找到最接近的标准峰值
+            if len(ref_peaks) > 0:
+                ref_peak_wls = valid_ref_wavelength[ref_peaks]
+                closest_idx = np.argmin(np.abs(ref_peak_wls - current_peak_wl))
+                closest_ref_peak_wl = ref_peak_wls[closest_idx]
+                closest_ref_peak_refl = ref_smoothed[ref_peaks[closest_idx]]
+                wl_diff = current_peak_wl - closest_ref_peak_wl
+                
+                html_feature_analysis += f"<tr><td>{current_peak_wl:.1f}nm</td><td>{current_peak_refl:.2f}%</td>"
+                html_feature_analysis += f"<td>{closest_ref_peak_wl:.1f}nm</td><td>{closest_ref_peak_refl:.2f}%</td>"
+                html_feature_analysis += f"<td>{wl_diff:.1f}nm</td></tr>"
+        else:
+                html_feature_analysis += f"<tr><td>{current_peak_wl:.1f}nm</td><td>{current_peak_refl:.2f}%</td>"
+                html_feature_analysis += "<td colspan='3'>标准曲线无峰值</td></tr>"
+        
+        html_feature_analysis += "</table>"
+        
+        # 谷值比对
+        html_feature_analysis += "<p>谷值比对：</p>"
+        html_feature_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
+        html_feature_analysis += "<tr><th>当前曲线谷值波长</th><th>当前谷值反射率</th><th>最接近的标准谷值波长</th><th>标准谷值反射率</th><th>波长差异</th></tr>"
+        
+        for valley in current_valleys:
+            current_valley_wl = valid_wavelength[valley]
+            current_valley_refl = current_smoothed[valley]
+            
+            # 找到最接近的标准谷值
+            if len(ref_valleys) > 0:
+                ref_valley_wls = valid_ref_wavelength[ref_valleys]
+                closest_idx = np.argmin(np.abs(ref_valley_wls - current_valley_wl))
+                closest_ref_valley_wl = ref_valley_wls[closest_idx]
+                closest_ref_valley_refl = ref_smoothed[ref_valleys[closest_idx]]
+                wl_diff = current_valley_wl - closest_ref_valley_wl
+                
+                html_feature_analysis += f"<tr><td>{current_valley_wl:.1f}nm</td><td>{current_valley_refl:.2f}%</td>"
+                html_feature_analysis += f"<td>{closest_ref_valley_wl:.1f}nm</td><td>{closest_ref_valley_refl:.2f}%</td>"
+                html_feature_analysis += f"<td>{wl_diff:.1f}nm</td></tr>"
+            else:
+                html_feature_analysis += f"<tr><td>{current_valley_wl:.1f}nm</td><td>{current_valley_refl:.2f}%</td>"
+                html_feature_analysis += "<td colspan='3'>标准曲线无谷值</td></tr>"
+        
+        html_feature_analysis += "</table>"
+        
+        # 综合评估
+        similarity_score = corr_coef * 100  # 基于相关系数的相似度得分
+        feature_similarity = 0
+        
+        # 计算特征点相似度
+        if len(current_peaks) > 0 and len(ref_peaks) > 0:
+            peak_diffs = []
+            for peak in current_peaks:
+                current_peak_wl = valid_wavelength[peak]
+                ref_peak_wls = valid_ref_wavelength[ref_peaks]
+                min_diff = np.min(np.abs(ref_peak_wls - current_peak_wl))
+                peak_diffs.append(min_diff)
+            
+            avg_peak_diff = np.mean(peak_diffs)
+            max_allowed_diff = 20  # 最大允许差异 (nm)
+            peak_similarity = max(0, 100 * (1 - avg_peak_diff / max_allowed_diff))
+            feature_similarity = peak_similarity
+        
+        # 综合得分 (相关系数占70%，特征点相似度占30%)
+        overall_score = 0.7 * similarity_score
+        if feature_similarity > 0:
+            overall_score += 0.3 * feature_similarity
+        
+        # 添加结论
+        html_conclusion = "<h3>综合评估与结论</h3>"
+        
+        if overall_score >= 90:
+            match_level = "极高"
+            conclusion = "当前曲线与标准曲线高度匹配，各项特征基本一致。"
+        elif overall_score >= 80:
+            match_level = "高"
+            conclusion = "当前曲线与标准曲线匹配度高，主要特征相似。"
+        elif overall_score >= 70:
+            match_level = "中高"
+            conclusion = "当前曲线与标准曲线有较好的匹配度，主要特征相似但存在一些差异。"
+        elif overall_score >= 60:
+            match_level = "中等"
+            conclusion = "当前曲线与标准曲线匹配度一般，存在明显差异。"
+        else:
+            match_level = "低"
+            conclusion = "当前曲线与标准曲线差异较大，匹配度低。"
+        
+        html_conclusion += f"<p>相似度得分：<b>{overall_score:.1f}</b>/100</p>"
+        html_conclusion += f"<p>匹配程度：<b>{match_level}</b></p>"
+        html_conclusion += f"<p>结论：{conclusion}</p>"
+        
+        # 主要差异点分析
+        html_conclusion += "<p><b>主要差异点分析：</b></p><ul>"
+        
+        # 找出最大差异的区域
+        if region_diff_data:
+            max_rel_diff_region = max(region_diff_data, key=lambda x: abs(x[4]))
+            _, _, region_name, diff_mean, rel_diff_mean = max_rel_diff_region
+            html_conclusion += f"<li>{region_name}区域存在最大相对差异：{rel_diff_mean:.2f}%</li>"
+        
+        # 分析峰值差异
+        if len(current_peaks) != len(ref_peaks):
+            html_conclusion += f"<li>峰值数量不同：当前曲线有{len(current_peaks)}个峰值，标准曲线有{len(ref_peaks)}个峰值</li>"
+        
+        # 分析谷值差异
+        if len(current_valleys) != len(ref_valleys):
+            html_conclusion += f"<li>谷值数量不同：当前曲线有{len(current_valleys)}个谷值，标准曲线有{len(ref_valleys)}个谷值</li>"
+        
+        # 最大差异点
+        html_conclusion += f"<li>最大差异点在波长{max_diff_wl:.0f}nm处，差异值为{max_diff:.2f}%</li>"
+        
+        html_conclusion += "</ul>"
+        
+        # 添加建议
+        html_conclusion += "<p><b>建议：</b></p>"
+        if overall_score >= 80:
+            html_conclusion += "<p>当前曲线与标准曲线十分接近，可以考虑作为标准曲线的替代品。</p>"
+        elif overall_score >= 70:
+            html_conclusion += "<p>当前曲线与标准曲线较为接近，需要关注差异较大的波长区域，评估影响。</p>"
+        else:
+            html_conclusion += "<p>当前曲线与标准曲线差异明显，建议分析差异原因，或考虑重新采集数据。</p>"
+        
+        # 添加到HTML结果
+        text_result.setHtml(html_result + html_region_analysis + html_feature_analysis + html_conclusion)
+        
+        # 添加到布局
+        layout.addWidget(text_result)
+        layout.addWidget(fig_container)
+        layout.addWidget(canvas3)
+        
+        # 添加到标签页
+        self.tab_widget.addTab(tab, "标准比对")
 
 
 class SpectralCanvas(FigureCanvas):
@@ -772,12 +1079,13 @@ class SpectralCanvas(FigureCanvas):
         self.axes.grid(self._show_grid, linestyle='--', alpha=0.7)
         self.draw()
         
-    def plot_spectra(self, spectra_dict, title="反射率光谱对比图"):
+    def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None):
         """绘制多条光谱曲线
         
         Args:
             spectra_dict: 包含多个光谱数据的字典 {显示标签: (波长数组, 反射率数组)}
             title: 图表标题
+            reference_curve: 标准曲线的名称
         """
         self.axes.clear()
         self.lines = []
@@ -844,7 +1152,19 @@ class SpectralCanvas(FigureCanvas):
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
         
+        # 找出标准曲线在列表中的位置
+        reference_idx = -1
+        for i, label in enumerate(spectra_dict.keys()):
+            if reference_curve and label.replace(" [标准]", "") == reference_curve:
+                reference_idx = i
+                break
+        
+        # 先绘制非标准曲线
         for i, (label, (wavelength, reflectance)) in enumerate(spectra_dict.items()):
+            # 如果是标准曲线，稍后绘制
+            if i == reference_idx:
+                continue
+                
             # 移除NaN值
             mask = ~np.isnan(reflectance)
             
@@ -852,6 +1172,31 @@ class SpectralCanvas(FigureCanvas):
             line, = self.axes.plot(wavelength[mask], reflectance[mask], 
                                   label=label, color=colors[i], 
                                   linewidth=1.5, picker=5)
+            
+            # 保存线条引用和原始线宽
+            self.lines.append(line)
+            self.original_linewidths[line] = line.get_linewidth()
+        
+        # 如果有标准曲线，最后绘制它（使其位于最上层）
+        if reference_idx >= 0:
+            label = list(spectra_dict.keys())[reference_idx]
+            wavelength, reflectance = spectra_dict[label]
+            
+            # 移除NaN值
+            mask = ~np.isnan(reflectance)
+            
+            # 使用更醒目的样式绘制标准曲线
+            line, = self.axes.plot(wavelength[mask], reflectance[mask], 
+                                 label=f"{label} [标准]", color='red', 
+                                 linewidth=2.5, linestyle='-', picker=5)
+            
+            # 添加标准曲线的指示标签
+            last_valid_idx = np.where(mask)[0][-1]
+            self.axes.annotate('标准曲线', 
+                             xy=(wavelength[last_valid_idx], reflectance[last_valid_idx]),
+                             xytext=(10, 0), textcoords='offset points',
+                             fontsize=9, fontweight='bold', color='red',
+                             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="red", alpha=0.8))
             
             # 保存线条引用和原始线宽
             self.lines.append(line)
@@ -1092,6 +1437,7 @@ class SpectralViewer(QMainWindow):
         self.spectra_data = {}  # 用于存储所有已加载的光谱数据
         self.base_folder = ""   # 基础文件夹路径
         self.grid_visible = True  # 添加网格状态跟踪
+        self.reference_curve = None  # 存储标准曲线的名称
         
         self.initUI()
         
@@ -1236,6 +1582,21 @@ class SpectralViewer(QMainWindow):
             analyze_single_action = QAction("分析单条曲线", self)
             analyze_single_action.triggered.connect(self.analyze_single_curve)
             context_menu.addAction(analyze_single_action)
+            
+            # 添加设置/取消标准曲线选项
+            selected_curve = selected_items[0].text()
+            clean_name = selected_curve.replace(" [标准]", "")  # 移除可能存在的标记
+            
+            if self.reference_curve == clean_name:
+                # 如果当前选中的曲线已经是标准曲线，则显示取消选项
+                reference_action = QAction("取消设为标准曲线", self)
+                reference_action.triggered.connect(self.remove_reference_curve)
+            else:
+                # 否则显示设置选项
+                reference_action = QAction("设为标准曲线", self)
+                reference_action.triggered.connect(lambda: self.set_reference_curve(clean_name))
+                
+            context_menu.addAction(reference_action)
         
         # 如果选中了多个项目，添加全部删除选项
         if len(selected_items) > 1:
@@ -1264,7 +1625,15 @@ class SpectralViewer(QMainWindow):
         # 移除选中的文件
         for item in selected_items:
             label = item.text()
-            if label in self.spectra_data:
+            clean_label = label.replace(" [标准]", "")
+            
+            # 检查是否是标准曲线
+            if self.reference_curve == clean_label:
+                self.reference_curve = None  # 移除标准曲线引用
+                
+            if clean_label in self.spectra_data:
+                del self.spectra_data[clean_label]
+            elif label in self.spectra_data:
                 del self.spectra_data[label]
                 
             # 从列表中移除项目
@@ -1296,6 +1665,9 @@ class SpectralViewer(QMainWindow):
         self.spectra_data.clear()
         self.file_list.clear()
         self.canvas.clear_plot()
+        
+        # 清空标准曲线设置
+        self.reference_curve = None
         
         # 禁用按钮
         self.clear_btn.setEnabled(False)
@@ -1495,7 +1867,12 @@ class SpectralViewer(QMainWindow):
             
             # 绘制所有光谱数据
             if filtered_data:
-                self.canvas.plot_spectra(filtered_data)
+                # 传递标准曲线信息
+                reference_curve = None
+                if self.reference_curve is not None:
+                    reference_curve = self.reference_curve.replace(" [标准]", "")
+                    
+                self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
         except Exception as e:
             QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
     
@@ -2390,6 +2767,60 @@ class SpectralViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "加载错误", 
                                 f"无法加载文件 {file_path}:\n{str(e)}")
+    
+    def set_reference_curve(self, curve_name):
+        """设置指定曲线为标准曲线
+        
+        Args:
+            curve_name: 标准曲线的名称
+        """
+        # 如果已有标准曲线且不是当前选择的曲线，则先取消原标准曲线
+        if self.reference_curve is not None and self.reference_curve != curve_name:
+            # 更新文件列表项显示
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                if item.text() == self.reference_curve:
+                    # 移除之前项目的标准曲线标记
+                    item.setText(item.text().replace(" [标准]", ""))
+                    break
+        
+        # 设置新的标准曲线
+        self.reference_curve = curve_name
+        
+        # 更新文件列表项显示
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if item.text() == curve_name:
+                # 添加标准曲线标记
+                if not " [标准]" in item.text():
+                    item.setText(f"{item.text()} [标准]")
+                item.setForeground(QBrush(QColor("red")))  # 设置文本为红色
+                break
+        
+        # 更新图表以突出显示标准曲线
+        self.update_plot()
+        
+        QMessageBox.information(self, "设置标准曲线", f"已将 '{curve_name}' 设为标准曲线")
+    
+    def remove_reference_curve(self):
+        """取消当前标准曲线的设置"""
+        if self.reference_curve is None:
+            return
+            
+        # 更新文件列表项显示
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if self.reference_curve in item.text():
+                # 移除标准曲线标记
+                item.setText(item.text().replace(" [标准]", ""))
+                item.setForeground(QBrush(QColor("black")))  # 恢复默认文本颜色
+                break
+        
+        # 清空标准曲线设置
+        self.reference_curve = None
+        
+        # 更新图表
+        self.update_plot()
 
 
 if __name__ == '__main__':
