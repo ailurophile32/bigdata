@@ -1055,6 +1055,13 @@ class SpectralCanvas(FigureCanvas):
         self._show_grid = True
         # 初始化显示网格
         self.axes.grid(True, linestyle='--', alpha=0.7)
+        
+        # 鼠标拖动相关变量
+        self._pan_enabled = False
+        self._pan_start_x = 0
+        self._pan_start_y = 0
+        self._pan_start_xlim = None
+        self._pan_start_ylim = None
     
     def wheelEvent(self, event):
         """重写wheelEvent处理鼠标滚轮事件
@@ -1643,6 +1650,64 @@ class SpectralCanvas(FigureCanvas):
             self.wavelength_labels = []
         
         self.draw()
+
+    def mousePressEvent(self, event):
+        """处理鼠标按下事件"""
+        if event.button() == Qt.MiddleButton:
+            # 启用拖动模式
+            self._pan_enabled = True
+            self._pan_start_x = event.x()
+            self._pan_start_y = event.y()
+            self._pan_start_xlim = self.axes.get_xlim()
+            self._pan_start_ylim = self.axes.get_ylim()
+            self.setCursor(Qt.ClosedHandCursor)  # 修改鼠标指针为抓取手形
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+            
+    def mouseReleaseEvent(self, event):
+        """处理鼠标释放事件"""
+        if event.button() == Qt.MiddleButton and self._pan_enabled:
+            # 禁用拖动模式
+            self._pan_enabled = False
+            self.setCursor(Qt.ArrowCursor)  # 恢复默认指针
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+            
+    def mouseMoveEvent(self, event):
+        """处理鼠标移动事件"""
+        if self._pan_enabled:
+            # 计算鼠标移动距离
+            dx = event.x() - self._pan_start_x
+            dy = event.y() - self._pan_start_y
+            
+            # 转换像素移动到数据坐标移动
+            # 需要根据当前绘图区域和数据范围计算适当的缩放因子
+            pixel_width = self.width()
+            pixel_height = self.height()
+            x_range = self._pan_start_xlim[1] - self._pan_start_xlim[0]
+            y_range = self._pan_start_ylim[1] - self._pan_start_ylim[0]
+            
+            # 计算缩放因子
+            x_scale = x_range / pixel_width
+            y_scale = y_range / pixel_height
+            
+            # 计算新的坐标范围，注意y轴方向是反的
+            new_xlim = (self._pan_start_xlim[0] - dx * x_scale, 
+                        self._pan_start_xlim[1] - dx * x_scale)
+            new_ylim = (self._pan_start_ylim[0] + dy * y_scale, 
+                        self._pan_start_ylim[1] + dy * y_scale)
+            
+            # 应用新的坐标范围
+            self.axes.set_xlim(new_xlim)
+            self.axes.set_ylim(new_ylim)
+            
+            # 重绘画布
+            self.draw()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
 
 
 class SpectralViewer(QMainWindow):
