@@ -14,7 +14,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QListWidget, QSplitter, QCheckBox, QComboBox, 
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
                             QMenu, QAction, QTextEdit, QDialog, QTableWidget,
-                            QTableWidgetItem, QTabWidget, QHeaderView, QStyle)
+                            QTableWidgetItem, QTabWidget, QHeaderView, QStyle,
+                            QLineEdit)
 from PyQt5.QtCore import Qt, QDir, QTextCodec, QPoint
 from PyQt5.QtGui import QColor, QFont, QBrush
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
@@ -1426,6 +1427,85 @@ class SpectralCanvas(FigureCanvas):
             if abs(wl_min - x_start) < 10 and abs(wl_max - x_end) < 10:
                 return name
         return ""
+    
+    def add_wavelength_markers(self, wavelengths):
+        """在所有曲线上添加特定波长的标记
+        
+        Args:
+            wavelengths: 要标记的波长列表
+        """
+        if not self.lines or not wavelengths:
+            return
+            
+        # 保存所有添加的标记以便稍后清除
+        self.wavelength_markers = []
+        self.wavelength_annotations = []
+        
+        # 标记颜色和样式
+        markers = ['o', 's', '^', 'D', '*', 'p', 'h']
+        
+        # 获取y轴范围以避免标签重叠
+        y_range = self.axes.get_ylim()
+        y_height = y_range[1] - y_range[0]
+        
+        # 为每条曲线在每个指定波长添加标记点
+        for line_idx, line in enumerate(self.lines):
+            x_data = line.get_xdata()
+            y_data = line.get_ydata()
+            line_color = line.get_color()
+            line_label = line.get_label()
+            
+            # 对每个指定波长找最接近的点
+            for i, target_wl in enumerate(wavelengths):
+                # 找到最接近目标波长的点
+                idx = np.abs(x_data - target_wl).argmin()
+                actual_wl = x_data[idx]
+                value = y_data[idx]
+                
+                # 仅当找到的点与目标波长接近时添加标记
+                if abs(actual_wl - target_wl) <= 10:  # 允许10nm以内的误差
+                    # 使用循环的标记样式
+                    marker_style = markers[i % len(markers)]
+                    
+                    # 添加标记点
+                    marker = self.axes.plot([actual_wl], [value], marker_style, 
+                                          color=line_color, markersize=8, 
+                                          markeredgecolor='white', markeredgewidth=1.5,
+                                          zorder=10)[0]
+                    self.wavelength_markers.append(marker)
+                    
+                    # 计算标签位置，避免重叠
+                    offset = (i % 3) * 0.03 * y_height  # 使用不同的垂直偏移
+                    
+                    # 添加波长和值的标签
+                    annotation = self.axes.annotate(
+                        f"{actual_wl:.1f}nm: {value:.2f}%",
+                        xy=(actual_wl, value),
+                        xytext=(5, 5 + offset),  # 水平和垂直偏移
+                        textcoords='offset points',
+                        color=line_color,
+                        fontsize=8,
+                        fontweight='bold',
+                        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=line_color, alpha=0.8)
+                    )
+                    self.wavelength_annotations.append(annotation)
+        
+        # 重绘画布
+        self.draw()
+    
+    def clear_wavelength_markers(self):
+        """清除所有波长标记点"""
+        if hasattr(self, 'wavelength_markers'):
+            for marker in self.wavelength_markers:
+                marker.remove()
+            self.wavelength_markers = []
+            
+        if hasattr(self, 'wavelength_annotations'):
+            for annotation in self.wavelength_annotations:
+                annotation.remove()
+            self.wavelength_annotations = []
+            
+        self.draw()
 
 
 class SpectralViewer(QMainWindow):
@@ -1536,6 +1616,46 @@ class SpectralViewer(QMainWindow):
         self.wl_max.currentTextChanged.connect(self.update_plot)
         
         plot_control_layout.addLayout(range_layout)
+        
+        # 添加波长标记功能
+        wavelength_group = QGroupBox("波长标记")
+        wavelength_layout = QVBoxLayout()
+        
+        # 添加波长选择UI
+        wavelength_input_layout = QHBoxLayout()
+        wavelength_input_layout.addWidget(QLabel("输入波长:"))
+        self.wavelength_input = QLineEdit()
+        self.wavelength_input.setPlaceholderText("输入波长值，如: 450")
+        wavelength_input_layout.addWidget(self.wavelength_input)
+        add_btn = QPushButton("添加")
+        add_btn.clicked.connect(self.add_wavelength)
+        wavelength_input_layout.addWidget(add_btn)
+        wavelength_layout.addLayout(wavelength_input_layout)
+        
+        # 添加显示当前选择的波长列表
+        wavelength_layout.addWidget(QLabel("当前选择的波长:"))
+        self.wavelength_list = QListWidget()
+        self.wavelength_list.setMaximumHeight(120)
+        self.wavelength_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.wavelength_list.customContextMenuRequested.connect(self.show_wavelength_context_menu)
+        wavelength_layout.addWidget(self.wavelength_list)
+        # 添加默认波长
+        for default_wl in [532, 671, 780, 1020]:
+            self.wavelength_list.addItem(f"{default_wl:.1f}")
+        
+        # 添加操作按钮
+        btn_layout = QHBoxLayout()
+        mark_btn = QPushButton("标记选中波长")
+        mark_btn.clicked.connect(self.mark_selected_wavelengths)
+        clear_btn = QPushButton("清除标记")
+        clear_btn.clicked.connect(self.clear_wavelength_marks)
+        btn_layout.addWidget(mark_btn)
+        btn_layout.addWidget(clear_btn)
+        wavelength_layout.addLayout(btn_layout)
+        
+        # 应用布局
+        wavelength_group.setLayout(wavelength_layout)
+        plot_control_layout.addWidget(wavelength_group)
         
         plot_control_group.setLayout(plot_control_layout)
         control_layout.addWidget(plot_control_group)
@@ -1902,6 +2022,15 @@ class SpectralViewer(QMainWindow):
                     reference_curve = self.reference_curve.replace(" [标准]", "")
                     
                 self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
+                
+                # 如果有波长标记，重新添加
+                if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
+                    wavelengths = []
+                    for i in range(self.wavelength_list.count()):
+                        wavelengths.append(float(self.wavelength_list.item(i).text()))
+                    
+                    if wavelengths:
+                        self.canvas.add_wavelength_markers(wavelengths)
         except Exception as e:
             QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
     
@@ -2850,6 +2979,92 @@ class SpectralViewer(QMainWindow):
         
         # 更新图表
         self.update_plot()
+    
+    def add_wavelength(self):
+        """添加波长到列表"""
+        text = self.wavelength_input.text().strip()
+        try:
+            # 尝试将输入解析为波长值
+            wavelength = float(text)
+            
+            # 检查是否在有效范围内
+            wl_min = float(self.wl_min.currentText())
+            wl_max = float(self.wl_max.currentText())
+            
+            if wavelength < wl_min or wavelength > wl_max:
+                QMessageBox.warning(self, "无效波长", 
+                                 f"波长必须在当前显示范围 ({wl_min}nm - {wl_max}nm) 内")
+                return
+                
+            # 检查是否已存在
+            for i in range(self.wavelength_list.count()):
+                if abs(float(self.wavelength_list.item(i).text()) - wavelength) < 0.1:
+                    QMessageBox.information(self, "波长已存在", 
+                                         f"波长 {wavelength}nm 已在列表中")
+                    return
+            
+            # 添加到列表
+            self.wavelength_list.addItem(f"{wavelength:.1f}")
+            
+            # 清除输入框
+            self.wavelength_input.clear()
+            
+        except ValueError:
+            QMessageBox.warning(self, "输入错误", "请输入有效的波长数值")
+    
+    def show_wavelength_context_menu(self, position):
+        """显示波长列表的右键菜单"""
+        if self.wavelength_list.count() == 0:
+            return
+            
+        context_menu = QMenu(self)
+        
+        # 删除选中项
+        remove_action = QAction("删除选中波长", self)
+        remove_action.triggered.connect(self.remove_selected_wavelength)
+        context_menu.addAction(remove_action)
+        
+        # 清空所有
+        if self.wavelength_list.count() > 1:
+            clear_all_action = QAction("清空所有波长", self)
+            clear_all_action.triggered.connect(self.clear_all_wavelengths)
+            context_menu.addAction(clear_all_action)
+        
+        context_menu.exec_(self.wavelength_list.mapToGlobal(position))
+    
+    def remove_selected_wavelength(self):
+        """移除选中的波长"""
+        for item in self.wavelength_list.selectedItems():
+            self.wavelength_list.takeItem(self.wavelength_list.row(item))
+    
+    def clear_all_wavelengths(self):
+        """清空所有波长"""
+        self.wavelength_list.clear()
+    
+    def mark_selected_wavelengths(self):
+        """标记所有选择的波长"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "无数据", "请先加载光谱数据")
+            return
+            
+        # 获取所有波长
+        wavelengths = []
+        for i in range(self.wavelength_list.count()):
+            wavelengths.append(float(self.wavelength_list.item(i).text()))
+            
+        if not wavelengths:
+            QMessageBox.information(self, "未选择波长", "请先添加要标记的波长")
+            return
+            
+        # 先清除现有标记
+        self.canvas.clear_wavelength_markers()
+        
+        # 添加新标记
+        self.canvas.add_wavelength_markers(wavelengths)
+    
+    def clear_wavelength_marks(self):
+        """清除所有波长标记"""
+        self.canvas.clear_wavelength_markers()
 
 
 if __name__ == '__main__':
