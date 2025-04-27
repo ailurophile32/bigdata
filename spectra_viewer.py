@@ -1443,8 +1443,13 @@ class SpectralViewer(QMainWindow):
         
     def initUI(self):
         """初始化用户界面"""
-        self.setWindowTitle('反射率光谱对比分析工具')
-        self.setGeometry(100, 100, 1200, 800)
+        self.setWindowTitle('光谱分析工具')
+        
+        # 设置主窗口大小，但先不设置位置
+        self.resize(1920, 1080)
+        
+        # 居中显示窗口
+        self.center_window()
         
         # 设置中文字体
         app_font = QFont("Microsoft YaHei", 9)
@@ -1560,6 +1565,30 @@ class SpectralViewer(QMainWindow):
         splitter.setSizes([300, 900])  # 设置初始大小
         
         main_layout.addWidget(splitter)
+    
+    def center_window(self):
+        """将窗口居中显示在屏幕上"""
+        try:
+            # 获取屏幕几何信息
+            screen = QApplication.primaryScreen()
+            screen_geometry = screen.availableGeometry()
+            
+            # 获取窗口几何信息
+            window_geometry = self.frameGeometry()
+            
+            # 计算居中位置
+            center_point = screen_geometry.center()
+            window_geometry.moveCenter(center_point)
+            
+            # 移动窗口到居中位置
+            self.move(window_geometry.topLeft())
+        except Exception:
+            # 兼容旧版本PyQt5
+            desktop = QApplication.desktop()
+            screen_rect = desktop.availableGeometry()
+            window_rect = self.frameGeometry()
+            window_rect.moveCenter(screen_rect.center())
+            self.move(window_rect.topLeft())
     
     def show_file_context_menu(self, position):
         """显示文件列表的右键菜单"""
