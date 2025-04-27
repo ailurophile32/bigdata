@@ -1048,11 +1048,59 @@ class SpectralCanvas(FigureCanvas):
         self.fig.canvas.mpl_connect('pick_event', self.on_pick)
         self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
         
+        # 启用鼠标跟踪，以便接收鼠标事件
+        self.setMouseTracking(True)
+        
         # 网格显示状态 - 默认为True
         self._show_grid = True
         # 初始化显示网格
         self.axes.grid(True, linestyle='--', alpha=0.7)
+    
+    def wheelEvent(self, event):
+        """重写wheelEvent处理鼠标滚轮事件
         
+        当用户按住Ctrl键并滚动鼠标滚轮时，实现图表的缩放功能
+        """
+        # 检查是否按下了Ctrl键
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers == Qt.ControlModifier:
+            # 获取当前x轴和y轴的范围
+            x_min, x_max = self.axes.get_xlim()
+            y_min, y_max = self.axes.get_ylim()
+            
+            # 计算滚动方向和缩放系数
+            delta = event.angleDelta().y()
+            if delta > 0:
+                # 向上滚动，放大
+                scale_factor = 0.8
+            else:
+                # 向下滚动，缩小
+                scale_factor = 1.25
+            
+            # 计算新的范围
+            x_center = (x_min + x_max) / 2
+            y_center = (y_min + y_max) / 2
+            
+            new_width = (x_max - x_min) * scale_factor
+            new_height = (y_max - y_min) * scale_factor
+            
+            # 设置新的坐标轴范围
+            self.axes.set_xlim([x_center - new_width/2, x_center + new_width/2])
+            self.axes.set_ylim([y_center - new_height/2, y_center + new_height/2])
+            
+            # 重绘画布
+            self.draw()
+            
+            # 标记事件已处理
+            event.accept()
+        else:
+            # 如果没有按Ctrl键，则调用父类方法处理默认行为
+            super().wheelEvent(event)
+    
+    def on_scroll(self, event):
+        """处理matplotlib的滚轮事件（已废弃，改用Qt的wheelEvent）"""
+        pass
+    
     @property
     def show_grid(self):
         """获取网格显示状态"""
