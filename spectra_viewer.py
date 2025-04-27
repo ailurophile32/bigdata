@@ -1440,22 +1440,68 @@ class SpectralCanvas(FigureCanvas):
         # 保存所有添加的标记以便稍后清除
         self.wavelength_markers = []
         self.wavelength_annotations = []
+        self.wavelength_vlines = []
+        self.wavelength_labels = []
         
-        # 标记颜色和样式
-        markers = ['o', 's', '^', 'D', '*', 'p', 'h']
-        
-        # 获取y轴范围以避免标签重叠
+        # 获取y轴范围
         y_range = self.axes.get_ylim()
-        y_height = y_range[1] - y_range[0]
+        y_min, y_max = y_range
+        y_height = y_max - y_min
         
-        # 为每条曲线在每个指定波长添加标记点
+        # 计算合适的标记大小和线宽
+        markersize = max(8, min(12, 1200 / len(self.lines) / len(wavelengths)))
+        
+        # 创建颜色映射，每个波长一个独特的颜色
+        cmap = plt.cm.tab10
+        wl_colors = [cmap(i % 10) for i in range(len(wavelengths))]
+        
+        # Step 1: 为每个波长添加垂直参考线和顶部标注
+        for i, wl in enumerate(wavelengths):
+            # 设置当前波长的基本颜色
+            line_color = wl_colors[i]
+            
+            # 添加垂直参考线 - 使用点线样式增加辨识度
+            vline = self.axes.axvline(
+                x=wl, 
+                color=line_color, 
+                linestyle=':', 
+                linewidth=1.0, 
+                alpha=0.6, 
+                zorder=3
+            )
+            self.wavelength_vlines.append(vline)
+            
+            # 在顶部添加波长标签，确保不超出图表区域
+            offset = 0.02 if i % 2 == 0 else 0.06  # 交错排列避免重叠
+            label = self.axes.annotate(
+                f"{wl:.1f}nm",
+                xy=(wl, y_max),
+                xytext=(0, -y_height * offset),  # 向下偏移
+                textcoords='offset points',
+                xycoords=('data', 'axes fraction'),
+                ha='center', va='top',
+                fontsize=13,  # 字体更大
+                color=line_color,
+                fontweight='bold',
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    fc="white",
+                    ec=line_color,
+                    alpha=0.9,
+                    linewidth=1.5
+                ),
+                zorder=30
+            )
+            self.wavelength_labels.append(label)
+        
+        # Step 2: 为每条曲线添加数据点和标签
         for line_idx, line in enumerate(self.lines):
             x_data = line.get_xdata()
             y_data = line.get_ydata()
             line_color = line.get_color()
             line_label = line.get_label()
             
-            # 对每个指定波长找最接近的点
+            # 为每个波长找到并标记对应点
             for i, target_wl in enumerate(wavelengths):
                 # 找到最接近目标波长的点
                 idx = np.abs(x_data - target_wl).argmin()
@@ -1464,31 +1510,64 @@ class SpectralCanvas(FigureCanvas):
                 
                 # 仅当找到的点与目标波长接近时添加标记
                 if abs(actual_wl - target_wl) <= 10:  # 允许10nm以内的误差
-                    # 使用循环的标记样式
-                    marker_style = markers[i % len(markers)]
+                    # 使用对应波长的颜色
+                    wl_color = wl_colors[i]
                     
-                    # 添加标记点
-                    marker = self.axes.plot([actual_wl], [value], marker_style, 
-                                          color=line_color, markersize=8, 
-                                          markeredgecolor='white', markeredgewidth=1.5,
-                                          zorder=10)[0]
+                    # 添加标记点 - 使用环形标记增强可见性
+                    marker = self.axes.plot(
+                        [actual_wl], [value],
+                        marker='o',
+                        markersize=markersize,
+                        markerfacecolor='white',
+                        markeredgecolor=line_color,
+                        markeredgewidth=2.0,
+                        zorder=10
+                    )[0]
                     self.wavelength_markers.append(marker)
                     
-                    # 计算标签位置，避免重叠
-                    offset = (i % 3) * 0.03 * y_height  # 使用不同的垂直偏移
+                    # 计算标签位置和连接线样式
+                    # 根据曲线和波长索引计算唯一的偏移位置
+                    h_index = (line_idx + i) % 3 - 1  # -1, 0, 1
+                    v_index = (line_idx % 4)  # 0, 1, 2, 3
                     
-                    # 添加波长和值的标签
+                    # 水平和垂直偏移量
+                    h_offset = 20 * h_index  # -20, 0, 20 像素
+                    # 非线性增长的垂直偏移确保更好的分散
+                    v_offset = 15 + v_index * 15  # 15, 30, 45, 60 像素
+                    
+                    # 连接线弯曲度，避免交叉
+                    rad = 0.2 * h_index
+                    
+                    # 添加数据标签 - 仅显示数值，使用带箭头的连接线
                     annotation = self.axes.annotate(
-                        f"{actual_wl:.1f}nm: {value:.2f}%",
+                        f"{value:.1f}",  # 简化显示，只保留一位小数
                         xy=(actual_wl, value),
-                        xytext=(5, 5 + offset),  # 水平和垂直偏移
+                        xytext=(h_offset, v_offset),
                         textcoords='offset points',
                         color=line_color,
-                        fontsize=8,
+                        fontsize=12,  # 字体更大
                         fontweight='bold',
-                        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=line_color, alpha=0.8)
+                        bbox=dict(
+                            boxstyle="round,pad=0.2",
+                            fc="white",
+                            ec=line_color,
+                            alpha=0.8,
+                            linewidth=1
+                        ),
+                        arrowprops=dict(
+                            arrowstyle='->', 
+                            color=line_color,
+                            connectionstyle=f"arc3,rad={rad}",
+                            linewidth=1,
+                            alpha=0.8
+                        ),
+                        zorder=20
                     )
                     self.wavelength_annotations.append(annotation)
+        
+        # 调整y轴限制，确保所有标签可见
+        self.axes.relim()
+        self.axes.autoscale_view()
         
         # 重绘画布
         self.draw()
@@ -1505,6 +1584,16 @@ class SpectralCanvas(FigureCanvas):
                 annotation.remove()
             self.wavelength_annotations = []
             
+        if hasattr(self, 'wavelength_vlines'):
+            for vline in self.wavelength_vlines:
+                vline.remove()
+            self.wavelength_vlines = []
+            
+        if hasattr(self, 'wavelength_labels'):
+            for label in self.wavelength_labels:
+                label.remove()
+            self.wavelength_labels = []
+        
         self.draw()
 
 
