@@ -1381,27 +1381,63 @@ class SpectralCanvas(FigureCanvas):
             self.update_highlight(None)
     
     def update_highlight(self, highlight_line):
-        """更新高亮显示的线条"""
-        # 如果当前有高亮线条，恢复原始线宽
-        if self.highlighted_line is not None and self.highlighted_line in self.original_linewidths:
-            self.highlighted_line.set_linewidth(self.original_linewidths[self.highlighted_line])
-            
-        # 更新高亮线条引用
-        self.highlighted_line = highlight_line
-        
-        # 如果有新的高亮线条，增加其线宽
-        if self.highlighted_line is not None:
-            orig_width = self.original_linewidths.get(self.highlighted_line, 1.5)
-            self.highlighted_line.set_linewidth(orig_width * 2.5)
-            
-        # 重绘画布
-        self.draw()
-
-    def add_analysis_markers(self, markers_dict):
-        """添加分析标记点到图表
+        """更新突出显示的曲线
         
         Args:
-            markers_dict: 包含标记信息的字典 {线条索引: [(x坐标, y坐标, 标记类型, 标记文本), ...]}
+            highlight_line: 要突出显示的曲线索引或名称
+        """
+        # 恢复所有曲线的正常线宽
+        for line in self.lines:
+            line.set_linewidth(1.5)
+            line.set_alpha(0.7)
+            
+        # 如果指定了突出显示的曲线
+        if highlight_line is not None:
+            # 确定线索引
+            line_idx = highlight_line
+            if isinstance(highlight_line, str):
+                for i, line in enumerate(self.lines):
+                    if line.get_label() == highlight_line:
+                        line_idx = i
+                        break
+            
+            # 突出显示指定曲线（如果存在）
+            if isinstance(line_idx, int) and 0 <= line_idx < len(self.lines):
+                self.lines[line_idx].set_linewidth(3.0)
+                self.lines[line_idx].set_alpha(1.0)
+        
+        # 更新图例
+        self.update_legend()
+        
+        # 重绘
+        self.draw()
+        
+    def update_legend(self):
+        """更新图例以适应当前的曲线和标记状态"""
+        # 移除旧图例
+        if hasattr(self, 'legend') and self.legend:
+            self.legend.remove()
+            
+        # 如果有曲线，则创建新图例
+        if self.lines:
+            # 创建带有当前线宽和透明度的图例
+            self.legend = self.axes.legend(
+                loc='upper right',
+                framealpha=0.9,
+                fancybox=True,
+                shadow=True,
+                fontsize=10
+            )
+            
+            # 提高图例的z-order以确保它显示在其他元素之上
+            if self.legend:
+                self.legend.set_zorder(100)
+                
+    def add_analysis_markers(self, markers_dict):
+        """在图表上添加分析标记
+        
+        Args:
+            markers_dict: 标记点字典 {名称: [(x1, y1), (x2, y2), ...]}
         """
         # 标记颜色和标记类型
         marker_styles = ['o', 's', '^', 'v', 'D', '*']
@@ -1537,44 +1573,66 @@ class SpectralCanvas(FigureCanvas):
         cmap = plt.cm.tab10
         wl_colors = [cmap(i % 10) for i in range(len(wavelengths))]
         
-        # Step 1: 为每个波长添加垂直参考线和顶部标注
+        # Step 1: 为每个波长添加垂直参考线和标注
         for i, wl in enumerate(wavelengths):
             # 设置当前波长的基本颜色
             line_color = wl_colors[i]
             
-            # 添加垂直参考线 - 使用点线样式增加辨识度
+            # 添加垂直参考线 - 使用更加明显的虚线样式，作为辅助线
             vline = self.axes.axvline(
                 x=wl, 
                 color=line_color, 
-                linestyle=':', 
-                linewidth=1.0, 
-                alpha=0.6, 
-                zorder=3
+                linestyle='--', 
+                linewidth=1.8,  # 更粗的线宽
+                alpha=0.85,     # 更高的不透明度
+                zorder=5        # 更高的z轴顺序确保可见性
+                # 移除label参数，使垂直线不出现在图例中
             )
             self.wavelength_vlines.append(vline)
             
-            # 在顶部添加波长标签，确保不超出图表区域
-            offset = 0.02 if i % 2 == 0 else 0.06  # 交错排列避免重叠
-            label = self.axes.annotate(
-                f"{wl:.1f}nm",
+            # 在顶部添加波长标签
+            top_label = self.axes.annotate(
+                f"λ={wl:.1f}nm",
                 xy=(wl, y_max),
-                xytext=(0, -y_height * offset),  # 向下偏移
+                xytext=(0, 20),  # 更大的偏移确保不会被其他元素遮挡
                 textcoords='offset points',
                 xycoords=('data', 'axes fraction'),
-                ha='center', va='top',
-                fontsize=13,  # 字体更大
+                ha='center', va='bottom',
+                fontsize=12,     # 字体大小
                 color=line_color,
                 fontweight='bold',
                 bbox=dict(
-                    boxstyle="round,pad=0.2",
+                    boxstyle="round,pad=0.4",
+                    fc="white",
+                    ec=line_color,
+                    alpha=0.95,
+                    linewidth=1.8
+                ),
+                zorder=40
+            )
+            self.wavelength_labels.append(top_label)
+            
+            # 在x轴交点处添加波长标签
+            x_axis_label = self.axes.annotate(
+                f"{wl:.1f}",
+                xy=(wl, y_min),
+                xytext=(0, -25),  # 向下偏移
+                textcoords='offset points',
+                xycoords=('data', 'data'),
+                ha='center', va='top',
+                fontsize=11,
+                color=line_color,
+                fontweight='bold',
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
                     fc="white",
                     ec=line_color,
                     alpha=0.9,
                     linewidth=1.5
                 ),
-                zorder=30
+                zorder=40
             )
-            self.wavelength_labels.append(label)
+            self.wavelength_labels.append(x_axis_label)
         
         # Step 2: 为每条曲线添加数据点和标签
         for line_idx, line in enumerate(self.lines):
@@ -1595,15 +1653,15 @@ class SpectralCanvas(FigureCanvas):
                     # 使用对应波长的颜色
                     wl_color = wl_colors[i]
                     
-                    # 添加标记点 - 使用环形标记增强可见性
+                    # 添加标记点 - 使用更明显的标记样式
                     marker = self.axes.plot(
                         [actual_wl], [value],
                         marker='o',
-                        markersize=markersize,
+                        markersize=markersize + 2,  # 稍大的标记
                         markerfacecolor='white',
                         markeredgecolor=line_color,
-                        markeredgewidth=2.0,
-                        zorder=10
+                        markeredgewidth=2.5,         # 更粗的边框
+                        zorder=20                    # 更高的z轴顺序
                     )[0]
                     self.wavelength_markers.append(marker)
                     
@@ -1615,41 +1673,44 @@ class SpectralCanvas(FigureCanvas):
                     # 水平和垂直偏移量
                     h_offset = 20 * h_index  # -20, 0, 20 像素
                     # 非线性增长的垂直偏移确保更好的分散
-                    v_offset = 15 + v_index * 15  # 15, 30, 45, 60 像素
+                    v_offset = 20 + v_index * 15  # 20, 35, 50, 65 像素
                     
                     # 连接线弯曲度，避免交叉
                     rad = 0.2 * h_index
                     
-                    # 添加数据标签 - 仅显示数值，使用带箭头的连接线
+                    # 添加数据标签 - 仅显示数值，使用带箭头的连接线(只保留1位小数)
                     annotation = self.axes.annotate(
-                        f"{value:.1f}",  # 简化显示，只保留一位小数
+                        f"{value:.1f}",
                         xy=(actual_wl, value),
                         xytext=(h_offset, v_offset),
                         textcoords='offset points',
                         color=line_color,
-                        fontsize=12,  # 字体更大
+                        fontsize=10,
                         fontweight='bold',
                         bbox=dict(
-                            boxstyle="round,pad=0.2",
+                            boxstyle="round,pad=0.3",
                             fc="white",
                             ec=line_color,
-                            alpha=0.8,
-                            linewidth=1
+                            alpha=0.9,
+                            linewidth=1.5
                         ),
                         arrowprops=dict(
                             arrowstyle='->', 
                             color=line_color,
                             connectionstyle=f"arc3,rad={rad}",
-                            linewidth=1,
-                            alpha=0.8
+                            linewidth=1.5,
+                            alpha=0.9
                         ),
-                        zorder=20
+                        zorder=30
                     )
                     self.wavelength_annotations.append(annotation)
         
         # 调整y轴限制，确保所有标签可见
         self.axes.relim()
         self.axes.autoscale_view()
+        
+        # 更新图例
+        self.update_legend()
         
         # 重绘画布
         self.draw()
