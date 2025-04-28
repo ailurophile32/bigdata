@@ -1062,78 +1062,10 @@ class SpectralCanvas(FigureCanvas):
         self._pan_start_y = 0
         self._pan_start_xlim = None
         self._pan_start_ylim = None
-    
-    def wheelEvent(self, event):
-        """重写wheelEvent处理鼠标滚轮事件
         
-        当用户按住Ctrl键并滚动鼠标滚轮时，实现图表的缩放功能
-        """
-        # 检查是否按下了Ctrl键
-        modifiers = QApplication.keyboardModifiers()
-        if modifiers == Qt.ControlModifier:
-            # 获取当前x轴和y轴的范围
-            x_min, x_max = self.axes.get_xlim()
-            y_min, y_max = self.axes.get_ylim()
-            
-            # 计算滚动方向和缩放系数
-            delta = event.angleDelta().y()
-            if delta > 0:
-                # 向上滚动，放大
-                scale_factor = 0.8
-            else:
-                # 向下滚动，缩小
-                scale_factor = 1.25
-            
-            # 计算新的范围
-            x_center = (x_min + x_max) / 2
-            y_center = (y_min + y_max) / 2
-            
-            new_width = (x_max - x_min) * scale_factor
-            new_height = (y_max - y_min) * scale_factor
-            
-            # 设置新的坐标轴范围
-            self.axes.set_xlim([x_center - new_width/2, x_center + new_width/2])
-            self.axes.set_ylim([y_center - new_height/2, y_center + new_height/2])
-            
-            # 重绘画布
-            self.draw()
-            
-            # 标记事件已处理
-            event.accept()
-        else:
-            # 如果没有按Ctrl键，则调用父类方法处理默认行为
-            super().wheelEvent(event)
-    
-    def on_scroll(self, event):
-        """处理matplotlib的滚轮事件（已废弃，改用Qt的wheelEvent）"""
-        pass
-    
-    @property
-    def show_grid(self):
-        """获取网格显示状态"""
-        return self._show_grid
-        
-    @show_grid.setter
-    def show_grid(self, value):
-        """设置网格显示状态并立即应用"""
-        self._show_grid = value
-        self.axes.grid(value, linestyle='--', alpha=0.7)
-        self.draw()
-        
-    def set_grid_visible(self, visible):
-        """设置网格显示状态"""
-        self.show_grid = visible
-        
-    def clear_plot(self):
-        """清除当前图表"""
-        self.axes.clear()
-        self.lines = []
-        self.legend_lines = []
-        self.highlighted_line = None
-        self.original_linewidths = {}
-        # 保持网格状态一致
-        self.axes.grid(self._show_grid, linestyle='--', alpha=0.7)
-        self.draw()
+        # 保存原始视图范围
+        self._original_xlim = None
+        self._original_ylim = None
         
     def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None):
         """绘制多条光谱曲线
@@ -1282,8 +1214,103 @@ class SpectralCanvas(FigureCanvas):
         self.legend_lines = legend.get_lines()
         
         self.fig.tight_layout()
+        
+        # 保存原始视图范围
+        self._original_xlim = self.axes.get_xlim()
+        self._original_ylim = self.axes.get_ylim()
+        
         self.draw()
+        
+    def reset_view(self):
+        """重置视图到原始范围"""
+        if self._original_xlim is not None and self._original_ylim is not None:
+            self.axes.set_xlim(self._original_xlim)
+            self.axes.set_ylim(self._original_ylim)
+            self.draw()
+
+    def wheelEvent(self, event):
+        # 检查是否按下了Ctrl键
+        if event.modifiers() & Qt.ControlModifier:
+            # 获取原始鼠标位置
+            pos = event.pos()
+            
+            # 获取鼠标位置对应的数据坐标（重要：必须使用正确的坐标变换）
+            ax = self.axes
+            width, height = self.get_width_height()
+            x_pos = pos.x() / width
+            y_pos = (height - pos.y()) / height  # 注意Y轴方向
+            
+            # 获取当前视图范围
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            
+            # 计算鼠标所指向的数据点坐标
+            data_x = xmin + (xmax - xmin) * x_pos
+            data_y = ymin + (ymax - ymin) * y_pos
+            
+            # 计算缩放系数
+            base_scale = 1.2
+            
+            # 根据滚轮方向确定缩放方向
+            if event.angleDelta().y() > 0:
+                # 放大
+                scale_factor = 1.0 / base_scale
+            else:
+                # 缩小
+                scale_factor = base_scale
+                
+            # 计算新的数据范围
+            new_width = (xmax - xmin) * scale_factor
+            new_height = (ymax - ymin) * scale_factor
+            
+            # 计算新的坐标范围，确保鼠标位置指向的数据点保持不变
+            new_xmin = data_x - x_pos * new_width
+            new_ymin = data_y - y_pos * new_height
+            
+            # 设置新的坐标范围
+            ax.set_xlim(new_xmin, new_xmin + new_width)
+            ax.set_ylim(new_ymin, new_ymin + new_height)
+            
+            # 使用draw_idle()进行延迟绘制，提高性能
+            self.draw_idle()
+            
+            # 标记事件已处理
+            event.accept()
+        else:
+            # 调用父类方法处理默认行为
+            super().wheelEvent(event)
     
+    def on_scroll(self, event):
+        """处理matplotlib的滚轮事件（已废弃，改用Qt的wheelEvent）"""
+        pass
+    
+    @property
+    def show_grid(self):
+        """获取网格显示状态"""
+        return self._show_grid
+        
+    @show_grid.setter
+    def show_grid(self, value):
+        """设置网格显示状态并立即应用"""
+        self._show_grid = value
+        self.axes.grid(value, linestyle='--', alpha=0.7)
+        self.draw()
+        
+    def set_grid_visible(self, visible):
+        """设置网格显示状态"""
+        self.show_grid = visible
+        
+    def clear_plot(self):
+        """清除当前图表"""
+        self.axes.clear()
+        self.lines = []
+        self.legend_lines = []
+        self.highlighted_line = None
+        self.original_linewidths = {}
+        # 保持网格状态一致
+        self.axes.grid(self._show_grid, linestyle='--', alpha=0.7)
+        self.draw()
+        
     def on_pick(self, event):
         """处理点击事件"""
         # 检查是否点击了图例中的线条
@@ -1876,6 +1903,9 @@ class SpectralViewer(QMainWindow):
         # 创建绘图画布
         self.canvas = SpectralCanvas(plot_panel)
         self.toolbar = NavigationToolbar(self.canvas, plot_panel)
+        
+        # 连接导航工具栏的重置视图按钮
+        self.toolbar.actions()[0].triggered.connect(self.canvas.reset_view)
         
         plot_layout.addWidget(self.toolbar)
         plot_layout.addWidget(self.canvas)
