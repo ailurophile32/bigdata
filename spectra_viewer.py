@@ -1027,34 +1027,31 @@ class SpectralCanvas(FigureCanvas):
     """用于显示光谱数据的画布类"""
     
     def __init__(self, parent=None, width=10, height=6, dpi=100):
+        # 创建MatPlotLib图形和坐标轴
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
         
-        FigureCanvas.__init__(self, self.fig)
+        # 初始化FigureCanvas
+        super(SpectralCanvas, self).__init__(self.fig)
         self.setParent(parent)
         
-        FigureCanvas.setSizePolicy(self, 
-                                  QSizePolicy.Expanding, 
-                                  QSizePolicy.Expanding)
+        # 设置FigureCanvas的大小策略
+        FigureCanvas.setSizePolicy(self,
+                                QSizePolicy.Expanding,
+                                QSizePolicy.Expanding)
         FigureCanvas.updateGeometry(self)
-        
-        # 存储线条和图例的引用
-        self.lines = []
-        self.legend_lines = []
-        self.highlighted_line = None
-        self.original_linewidths = {}
-        
-        # 连接事件
-        self.fig.canvas.mpl_connect('pick_event', self.on_pick)
-        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
         
         # 启用鼠标跟踪，以便接收鼠标事件
         self.setMouseTracking(True)
         
-        # 网格显示状态 - 默认为True
-        self._show_grid = True
-        # 初始化显示网格
-        self.axes.grid(True, linestyle='--', alpha=0.7)
+        # 初始化绘图相关的属性
+        self.lines = []  # 存储所有曲线
+        self.legend_lines = []  # 图例中的线条
+        self.highlighted_line = None  # 当前高亮的线条
+        self.original_linewidths = {}  # 原始线宽
+        self._original_xlim = None  # 原始x轴范围
+        self._original_ylim = None  # 原始y轴范围
+        self._show_grid = True      # 网格状态
         
         # 鼠标拖动相关变量
         self._pan_enabled = False
@@ -1063,10 +1060,48 @@ class SpectralCanvas(FigureCanvas):
         self._pan_start_xlim = None
         self._pan_start_ylim = None
         
-        # 保存原始视图范围
-        self._original_xlim = None
-        self._original_ylim = None
+        # 启用交互性支持
+        # 这些连接使得我们能够对图中的对象进行交互式操作
+        self.fig.canvas.mpl_connect('pick_event', self.on_pick)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
         
+        # 设置波长标记相关的属性
+        self.wavelength_markers = []
+        self.wavelength_annotations = []
+        self.wavelength_vlines = []
+        self.wavelength_labels = []
+        
+        # 添加视图变化事件的监听，以更新波长标记
+        self.axes.callbacks.connect('xlim_changed', self._on_view_changed)
+        self.axes.callbacks.connect('ylim_changed', self._on_view_changed)
+        
+        # 设置绘图样式
+        self.fig.set_facecolor('white')
+        self.axes.grid(True, linestyle='--', alpha=0.7)
+        self.axes.set_xlabel('波长 (nm)', fontsize=12)
+        self.axes.set_ylabel('反射率 (%)', fontsize=12)
+    
+    def _on_view_changed(self, event):
+        """当视图范围变化时调用此方法，更新波长标记"""
+        # 防止在初始化或清除时触发
+        if not hasattr(self, 'wavelength_vlines') or not self.wavelength_vlines:
+            return
+            
+        # 获取当前所有波长值
+        wavelengths = [vline.get_xdata()[0] for vline in self.wavelength_vlines]
+        if wavelengths:
+            # 使用延迟执行，避免在频繁缩放时过度重绘
+            self.delayed_update_wavelength_markers(wavelengths)
+            
+    def delayed_update_wavelength_markers(self, wavelengths):
+        """延迟更新波长标记，避免频繁重绘"""
+        # 清除现有标记
+        self.clear_wavelength_markers()
+        # 重新添加标记
+        self.add_wavelength_markers(wavelengths)
+        # 使用draw_idle延迟绘制
+        self.draw_idle()
+    
     def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None):
         """绘制多条光谱曲线
         
@@ -1226,8 +1261,19 @@ class SpectralCanvas(FigureCanvas):
         if self._original_xlim is not None and self._original_ylim is not None:
             self.axes.set_xlim(self._original_xlim)
             self.axes.set_ylim(self._original_ylim)
+            
+            # 在重置视图后更新波长标记
+            wavelengths = []
+            if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
+                for vline in self.wavelength_vlines:
+                    wavelengths.append(vline.get_xdata()[0])
+            
+            if wavelengths:
+                self.clear_wavelength_markers()
+                self.add_wavelength_markers(wavelengths)
+                
             self.draw()
-
+    
     def wheelEvent(self, event):
         # 检查是否按下了Ctrl键
         if event.modifiers() & Qt.ControlModifier:
@@ -1270,6 +1316,18 @@ class SpectralCanvas(FigureCanvas):
             # 设置新的坐标范围
             ax.set_xlim(new_xmin, new_xmin + new_width)
             ax.set_ylim(new_ymin, new_ymin + new_height)
+            
+            # 保存当前的波长标记，以便在缩放后更新
+            wavelengths = []
+            if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
+                # 从垂直线获取波长值
+                for vline in self.wavelength_vlines:
+                    wavelengths.append(vline.get_xdata()[0])
+            
+            # 如果有波长标记，先清除再重新添加
+            if wavelengths:
+                self.clear_wavelength_markers()
+                self.add_wavelength_markers(wavelengths)
             
             # 使用draw_idle()进行延迟绘制，提高性能
             self.draw_idle()
@@ -1566,8 +1624,12 @@ class SpectralCanvas(FigureCanvas):
         y_min, y_max = y_range
         y_height = y_max - y_min
         
-        # 计算合适的标记大小和线宽
-        markersize = max(8, min(12, 1200 / len(self.lines) / len(wavelengths)))
+        # 获取x轴范围，用于确定标签的合理位置
+        x_min, x_max = self.axes.get_xlim()
+        x_width = x_max - x_min
+        
+        # 计算合适的标记大小和线宽 - 根据当前视图范围动态调整
+        markersize = max(6, min(10, 800 / len(self.lines) / len(wavelengths) * (10 / x_width * 500)))
         
         # 创建颜色映射，每个波长一个独特的颜色
         cmap = plt.cm.tab10
@@ -1575,6 +1637,11 @@ class SpectralCanvas(FigureCanvas):
         
         # Step 1: 为每个波长添加垂直参考线和标注
         for i, wl in enumerate(wavelengths):
+            # 如果波长不在当前视图范围内或接近边缘，调整标签位置
+            in_view = x_min <= wl <= x_max
+            near_left = x_min <= wl < x_min + x_width * 0.1
+            near_right = x_max - x_width * 0.1 < wl <= x_max
+            
             # 设置当前波长的基本颜色
             line_color = wl_colors[i]
             
@@ -1585,56 +1652,50 @@ class SpectralCanvas(FigureCanvas):
                 linestyle='--', 
                 linewidth=1.8,  # 更粗的线宽
                 alpha=0.85,     # 更高的不透明度
-                zorder=5        # 更高的z轴顺序确保可见性
+                zorder=5,       # 更高的z轴顺序确保可见性
                 # 移除label参数，使垂直线不出现在图例中
             )
             self.wavelength_vlines.append(vline)
             
-            # 在顶部添加波长标签
-            top_label = self.axes.annotate(
-                f"λ={wl:.1f}nm",
-                xy=(wl, y_max),
-                xytext=(0, 20),  # 更大的偏移确保不会被其他元素遮挡
-                textcoords='offset points',
-                xycoords=('data', 'axes fraction'),
-                ha='center', va='bottom',
-                fontsize=12,     # 字体大小
-                color=line_color,
-                fontweight='bold',
-                bbox=dict(
-                    boxstyle="round,pad=0.4",
-                    fc="white",
-                    ec=line_color,
-                    alpha=0.95,
-                    linewidth=1.8
-                ),
-                zorder=40
-            )
-            self.wavelength_labels.append(top_label)
-            
-            # 在x轴交点处添加波长标签
-            x_axis_label = self.axes.annotate(
-                f"{wl:.1f}",
-                xy=(wl, y_min),
-                xytext=(0, -25),  # 向下偏移
-                textcoords='offset points',
-                xycoords=('data', 'data'),
-                ha='center', va='top',
-                fontsize=11,
-                color=line_color,
-                fontweight='bold',
-                bbox=dict(
-                    boxstyle="round,pad=0.3",
-                    fc="white",
-                    ec=line_color,
-                    alpha=0.9,
-                    linewidth=1.5
-                ),
-                zorder=40
-            )
-            self.wavelength_labels.append(x_axis_label)
+            # 动态计算标签位置，确保在缩放时仍然可见
+            if in_view:
+                # 标签水平位置调整
+                if near_left:
+                    # 靠近左边界时，将标签偏右
+                    h_adjust = 20
+                    ha_top = 'left'
+                elif near_right:
+                    # 靠近右边界时，将标签偏左
+                    h_adjust = -20
+                    ha_top = 'right'
+                else:
+                    # 中间位置居中对齐
+                    h_adjust = 0
+                    ha_top = 'center'
+                
+                # 在顶部添加波长标签 - 使用transform='figure'确保在缩放时标签位置固定
+                top_label = self.axes.annotate(
+                    f"λ={wl:.1f}nm",
+                    xy=(wl, y_max),
+                    xytext=(h_adjust, 20),  # 水平位置根据上面的逻辑调整
+                    textcoords='offset points',
+                    xycoords=('data', 'data'),
+                    ha=ha_top, va='bottom',
+                    fontsize=11,     # 字体大小
+                    color=line_color,
+                    fontweight='bold',
+                    bbox=dict(
+                        boxstyle="round,pad=0.4",
+                        fc="white",
+                        ec=line_color,
+                        alpha=0.95,
+                        linewidth=1.8
+                    ),
+                    zorder=40
+                )
+                self.wavelength_labels.append(top_label)
         
-        # Step 2: 为每条曲线添加数据点和标签
+        # Step 2: 为每条曲线添加数据点和标签，只有当波长在视图范围内时才添加
         for line_idx, line in enumerate(self.lines):
             x_data = line.get_xdata()
             y_data = line.get_ydata()
@@ -1643,74 +1704,75 @@ class SpectralCanvas(FigureCanvas):
             
             # 为每个波长找到并标记对应点
             for i, target_wl in enumerate(wavelengths):
-                # 找到最接近目标波长的点
-                idx = np.abs(x_data - target_wl).argmin()
-                actual_wl = x_data[idx]
-                value = y_data[idx]
-                
-                # 仅当找到的点与目标波长接近时添加标记
-                if abs(actual_wl - target_wl) <= 10:  # 允许10nm以内的误差
-                    # 使用对应波长的颜色
-                    wl_color = wl_colors[i]
+                # 只有当波长在当前视图范围内时才添加标记
+                if x_min <= target_wl <= x_max:
+                    # 找到最接近目标波长的点
+                    idx = np.abs(x_data - target_wl).argmin()
+                    actual_wl = x_data[idx]
+                    value = y_data[idx]
                     
-                    # 添加标记点 - 使用更明显的标记样式
-                    marker = self.axes.plot(
-                        [actual_wl], [value],
-                        marker='o',
-                        markersize=markersize + 2,  # 稍大的标记
-                        markerfacecolor='white',
-                        markeredgecolor=line_color,
-                        markeredgewidth=2.5,         # 更粗的边框
-                        zorder=20                    # 更高的z轴顺序
-                    )[0]
-                    self.wavelength_markers.append(marker)
-                    
-                    # 计算标签位置和连接线样式
-                    # 根据曲线和波长索引计算唯一的偏移位置
-                    h_index = (line_idx + i) % 3 - 1  # -1, 0, 1
-                    v_index = (line_idx % 4)  # 0, 1, 2, 3
-                    
-                    # 水平和垂直偏移量
-                    h_offset = 20 * h_index  # -20, 0, 20 像素
-                    # 非线性增长的垂直偏移确保更好的分散
-                    v_offset = 20 + v_index * 15  # 20, 35, 50, 65 像素
-                    
-                    # 连接线弯曲度，避免交叉
-                    rad = 0.2 * h_index
-                    
-                    # 添加数据标签 - 仅显示数值，使用带箭头的连接线(只保留1位小数)
-                    annotation = self.axes.annotate(
-                        f"{value:.1f}",
-                        xy=(actual_wl, value),
-                        xytext=(h_offset, v_offset),
-                        textcoords='offset points',
-                        color=line_color,
-                        fontsize=10,
-                        fontweight='bold',
-                        bbox=dict(
-                            boxstyle="round,pad=0.3",
-                            fc="white",
-                            ec=line_color,
-                            alpha=0.9,
-                            linewidth=1.5
-                        ),
-                        arrowprops=dict(
-                            arrowstyle='->', 
+                    # 仅当找到的点与目标波长接近时添加标记
+                    if abs(actual_wl - target_wl) <= 10:  # 允许10nm以内的误差
+                        # 使用对应波长的颜色
+                        wl_color = wl_colors[i]
+                        
+                        # 添加标记点 - 使用更明显的标记样式
+                        marker = self.axes.plot(
+                            [actual_wl], [value],
+                            marker='o',
+                            markersize=markersize,  # 动态调整的标记大小
+                            markerfacecolor='white',
+                            markeredgecolor=line_color,
+                            markeredgewidth=2.0,    # 更粗的边框
+                            zorder=20               # 更高的z轴顺序
+                        )[0]
+                        self.wavelength_markers.append(marker)
+                        
+                        # 计算标签位置和连接线样式
+                        # 根据曲线和波长索引计算唯一的偏移位置
+                        h_index = (line_idx + i) % 3 - 1  # -1, 0, 1
+                        v_index = (line_idx % 4)  # 0, 1, 2, 3
+                        
+                        # 水平和垂直偏移量
+                        h_offset = 20 * h_index  # -20, 0, 20 像素
+                        # 非线性增长的垂直偏移确保更好的分散
+                        v_offset = 20 + v_index * 15  # 20, 35, 50, 65 像素
+                        
+                        # 靠近边缘时进行调整
+                        if near_left and h_offset < 0:
+                            h_offset = abs(h_offset)
+                        elif near_right and h_offset > 0:
+                            h_offset = -abs(h_offset)
+                        
+                        # 连接线弯曲度，避免交叉
+                        rad = 0.2 * h_index
+                        
+                        # 添加数据标签 - 仅显示数值，使用带箭头的连接线(只保留1位小数)
+                        annotation = self.axes.annotate(
+                            f"{value:.1f}",
+                            xy=(actual_wl, value),
+                            xytext=(h_offset, v_offset),
+                            textcoords='offset points',
                             color=line_color,
-                            connectionstyle=f"arc3,rad={rad}",
-                            linewidth=1.5,
-                            alpha=0.9
-                        ),
-                        zorder=30
-                    )
-                    self.wavelength_annotations.append(annotation)
-        
-        # 调整y轴限制，确保所有标签可见
-        self.axes.relim()
-        self.axes.autoscale_view()
-        
-        # 更新图例
-        self.update_legend()
+                            fontsize=10,
+                            fontweight='bold',
+                            bbox=dict(
+                                boxstyle="round,pad=0.3",
+                                fc="white",
+                                ec=line_color,
+                                alpha=0.9,
+                                linewidth=1.5
+                            ),
+                            arrowprops=dict(
+                                arrowstyle='->', 
+                                color=line_color,
+                                connectionstyle=f"arc3,rad={rad}",
+                                linewidth=1.5,
+                                alpha=0.9
+                            ),
+                            zorder=30
+                        )
+                        self.wavelength_annotations.append(annotation)
         
         # 重绘画布
         self.draw()
@@ -1766,36 +1828,87 @@ class SpectralCanvas(FigureCanvas):
     def mouseMoveEvent(self, event):
         """处理鼠标移动事件"""
         if self._pan_enabled:
-            # 计算鼠标移动距离
+            # 计算鼠标移动的距离
             dx = event.x() - self._pan_start_x
             dy = event.y() - self._pan_start_y
             
-            # 转换像素移动到数据坐标移动
-            # 需要根据当前绘图区域和数据范围计算适当的缩放因子
-            pixel_width = self.width()
-            pixel_height = self.height()
-            x_range = self._pan_start_xlim[1] - self._pan_start_xlim[0]
-            y_range = self._pan_start_ylim[1] - self._pan_start_ylim[0]
+            # 获取当前视图范围
+            xmin, xmax = self.axes.get_xlim()
+            ymin, ymax = self.axes.get_ylim()
             
-            # 计算缩放因子
-            x_scale = x_range / pixel_width
-            y_scale = y_range / pixel_height
+            # 计算数据坐标的移动距离
+            width, height = self.get_width_height()
+            dx_data = (xmax - xmin) * dx / width
+            dy_data = (ymax - ymin) * dy / height
             
-            # 计算新的坐标范围，注意y轴方向是反的
-            new_xlim = (self._pan_start_xlim[0] - dx * x_scale, 
-                        self._pan_start_xlim[1] - dx * x_scale)
-            new_ylim = (self._pan_start_ylim[0] + dy * y_scale, 
-                        self._pan_start_ylim[1] + dy * y_scale)
+            # 更新视图范围
+            self.axes.set_xlim(xmin - dx_data, xmax - dx_data)
+            self.axes.set_ylim(ymin + dy_data, ymax + dy_data)
             
-            # 应用新的坐标范围
-            self.axes.set_xlim(new_xlim)
-            self.axes.set_ylim(new_ylim)
+            # 更新起始位置
+            self._pan_start_x = event.x()
+            self._pan_start_y = event.y()
+            
+            # 更新波长标记
+            wavelengths = []
+            if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
+                for vline in self.wavelength_vlines:
+                    wavelengths.append(vline.get_xdata()[0])
+            
+            if wavelengths:
+                self.clear_wavelength_markers()
+                self.add_wavelength_markers(wavelengths)
             
             # 重绘画布
-            self.draw()
-            event.accept()
+            self.draw_idle()
         else:
-            super().mouseMoveEvent(event)
+            # 处理鼠标悬停事件
+            # 将Qt坐标转换为matplotlib坐标
+            pos = event.pos()
+            width, height = self.get_width_height()
+            x_pos = pos.x() / width
+            y_pos = (height - pos.y()) / height  # 注意Y轴方向
+            
+            # 获取当前视图范围
+            xmin, xmax = self.axes.get_xlim()
+            ymin, ymax = self.axes.get_ylim()
+            
+            # 计算鼠标所指向的数据点坐标
+            x = xmin + (xmax - xmin) * x_pos
+            y = ymin + (ymax - ymin) * y_pos
+            
+            closest_line = None
+            min_distance = float('inf')
+            
+            # 找到最近的线条
+            for line in self.lines:
+                if not line.get_visible():
+                    continue
+                    
+                # 获取线条数据
+                xdata = line.get_xdata()
+                ydata = line.get_ydata()
+                
+                # 找到最近的点
+                distances = []
+                for xi, yi in zip(xdata, ydata):
+                    # 计算欧几里德距离
+                    dist = np.sqrt((x - xi)**2 + (y - yi)**2)
+                    distances.append(dist)
+                
+                if distances:
+                    min_dist = min(distances)
+                    if min_dist < min_distance:
+                        min_distance = min_dist
+                        closest_line = line
+            
+            # 设置阈值，确定是否足够近
+            threshold = (xmax - xmin) * 0.02
+            
+            if min_distance < threshold:
+                self.update_highlight(closest_line)
+            else:
+                self.update_highlight(None)
 
 
 class SpectralViewer(QMainWindow):
