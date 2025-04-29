@@ -66,7 +66,7 @@ class BaseAnalysisDialog(QDialog):
 
         # 标题文本
         title_label = QLabel(title)
-        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
         title_layout.addWidget(title_label)
 
         # 添加标题栏到主布局
@@ -145,7 +145,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         stats_table = QTableWidget()
         stats_table.setColumnCount(2)
         stats_table.setHorizontalHeaderLabels(["统计指标", "数值"])
-        stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
@@ -388,7 +388,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             "波长区域", "平均反射率", "标准差",
             "最大值", "最大值波长", "最小值", "最小值波长"
         ])
-        region_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        region_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # 区域分析图表
         fig = Figure(figsize=(9, 6), dpi=100)
@@ -493,7 +493,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
 
         # 创建画布并设置尺寸策略
         canvas = FigureCanvas(fig)
-        canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # 创建并添加导航工具栏
         toolbar = NavigationToolbar(canvas, tab)
@@ -616,7 +616,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         features_table = QTableWidget()
         features_table.setColumnCount(3)
         features_table.setHorizontalHeaderLabels(["特征点类型", "波长 (nm)", "反射率 (%)"])
-        features_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        features_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # 计算表格行数
         row_count = len(peaks) + len(valleys)
@@ -2144,91 +2144,99 @@ class SpectralViewer(QMainWindow):
 
     def show_file_context_menu(self, position):
         """显示文件列表的右键菜单"""
-        # 获取选中的项目
-        selected_items = self.file_list.selectedItems()
+        try:
+            # 获取选中的项目
+            selected_items = self.file_list.selectedItems()
 
-        if not selected_items:
-            return
+            if not selected_items:
+                return
 
-        # 创建右键菜单
-        context_menu = QMenu(self)
+            # 创建右键菜单
+            context_menu = QMenu(self)
 
-        # 添加删除动作
-        remove_action = QAction("删除选中文件", self)
-        remove_action.triggered.connect(self.remove_selected_files)
-        context_menu.addAction(remove_action)
+            # 添加删除动作
+            remove_action = QAction("删除选中文件", self)
+            remove_action.triggered.connect(self.remove_selected_files)
+            context_menu.addAction(remove_action)
 
-        # 添加单条曲线分析选项
-        if len(selected_items) == 1:
-            analyze_single_action = QAction("分析单条曲线", self)
-            analyze_single_action.triggered.connect(self.analyze_single_curve)
-            context_menu.addAction(analyze_single_action)
+            # 添加单条曲线分析选项
+            if len(selected_items) == 1:
+                analyze_single_action = QAction("分析单条曲线", self)
+                analyze_single_action.triggered.connect(self.analyze_single_curve)
+                context_menu.addAction(analyze_single_action)
 
-            # 添加设置/取消标准曲线选项
-            selected_curve = selected_items[0].text()
-            clean_name = selected_curve.replace(" [标准]", "")  # 移除可能存在的标记
+                # 添加设置/取消标准曲线选项
+                selected_curve = selected_items[0].text()
+                clean_name = selected_curve.replace(" [标准]", "")  # 移除可能存在的标记
 
-            if self.reference_curve == clean_name:
-                # 如果当前选中的曲线已经是标准曲线，则显示取消选项
-                reference_action = QAction("取消设为标准曲线", self)
-                reference_action.triggered.connect(self.remove_reference_curve)
-            else:
-                # 否则显示设置选项
-                reference_action = QAction("设为标准曲线", self)
-                reference_action.triggered.connect(lambda: self.set_reference_curve(clean_name))
+                if self.reference_curve == clean_name:
+                    # 如果当前选中的曲线已经是标准曲线，则显示取消选项
+                    reference_action = QAction("取消设为标准曲线", self)
+                    reference_action.triggered.connect(self.remove_reference_curve)
+                else:
+                    # 否则显示设置选项
+                    reference_action = QAction("设为标准曲线", self)
+                    reference_action.triggered.connect(lambda: self.set_reference_curve(clean_name))
 
-            context_menu.addAction(reference_action)
+                context_menu.addAction(reference_action)
 
-        # 如果选中了多个项目，添加全部删除选项
-        if len(selected_items) > 1:
-            remove_all_selected_action = QAction(f"删除所有选中的 {len(selected_items)} 个文件", self)
-            remove_all_selected_action.triggered.connect(self.remove_selected_files)
-            context_menu.addAction(remove_all_selected_action)
+            # 如果选中了多个项目，添加全部删除选项
+            if len(selected_items) > 1:
+                remove_all_selected_action = QAction(f"删除所有选中的 {len(selected_items)} 个文件", self)
+                remove_all_selected_action.triggered.connect(self.remove_selected_files)
+                context_menu.addAction(remove_all_selected_action)
 
-        # 显示菜单
-        context_menu.exec_(self.file_list.mapToGlobal(position))
+            # 显示菜单
+            context_menu.exec(self.file_list.mapToGlobal(position))
+        except Exception as e:
+            QMessageBox.critical(self, "菜单错误", f"显示右键菜单时出错: {str(e)}")
+            print(f"右键菜单错误: {e}")
 
     def remove_selected_files(self):
         """从列表和数据字典中移除选中的文件"""
-        selected_items = self.file_list.selectedItems()
+        try:
+            selected_items = self.file_list.selectedItems()
 
-        if not selected_items:
-            return
+            if not selected_items:
+                return
 
-        # 确认是否删除
-        message = f"确定要移除选中的 {len(selected_items)} 个文件吗？"
-        reply = QMessageBox.question(self, '确认删除', message,
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            # 确认是否删除
+            message = f"确定要移除选中的 {len(selected_items)} 个文件吗？"
+            reply = QMessageBox.question(self, '确认删除', message,
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
-        if reply == QMessageBox.No:
-            return
+            if reply == QMessageBox.No:
+                return
 
-        # 移除选中的文件
-        for item in selected_items:
-            label = item.text()
-            clean_label = label.replace(" [标准]", "")
+            # 移除选中的文件
+            for item in selected_items:
+                label = item.text()
+                clean_label = label.replace(" [标准]", "")
 
-            # 检查是否是标准曲线
-            if self.reference_curve == clean_label:
-                self.reference_curve = None  # 移除标准曲线引用
+                # 检查是否是标准曲线
+                if self.reference_curve == clean_label:
+                    self.reference_curve = None  # 移除标准曲线引用
 
-            if clean_label in self.spectra_data:
-                del self.spectra_data[clean_label]
-            elif label in self.spectra_data:
-                del self.spectra_data[label]
+                if clean_label in self.spectra_data:
+                    del self.spectra_data[clean_label]
+                elif label in self.spectra_data:
+                    del self.spectra_data[label]
 
-            # 从列表中移除项目
-            row = self.file_list.row(item)
-            self.file_list.takeItem(row)
+                # 从列表中移除项目
+                row = self.file_list.row(item)
+                self.file_list.takeItem(row)
 
-        # 禁用清空按钮（如果没有数据）
-        if self.file_list.count() == 0:
-            self.clear_btn.setEnabled(False)
-            self.reload_btn.setEnabled(False)
-            self.analyze_btn.setEnabled(False)  # 禁用分析按钮
+            # 禁用清空按钮（如果没有数据）
+            if self.file_list.count() == 0:
+                self.clear_btn.setEnabled(False)
+                self.reload_btn.setEnabled(False)
+                self.analyze_btn.setEnabled(False)  # 禁用分析按钮
 
-        # 更新图表
-        self.update_plot()
+            # 更新图表
+            self.update_plot()
+        except Exception as e:
+            QMessageBox.critical(self, "删除错误", f"删除文件时出错: {str(e)}")
+            print(f"删除文件错误: {e}")
 
     def clear_all_data(self):
         """清空所有加载的数据"""
@@ -2515,7 +2523,7 @@ class SpectralViewer(QMainWindow):
             # 3. 显示分析结果对话框
             result_dialog = AnalysisResultDialog(self)
             result_dialog.set_result_text(result_html)
-            result_dialog.exec_()
+            result_dialog.exec()
 
         except Exception as e:
             QMessageBox.warning(self, "分析错误", f"进行差异分析时出错: {str(e)}")
@@ -3278,37 +3286,43 @@ class SpectralViewer(QMainWindow):
 
     def analyze_single_curve(self):
         """分析单条光谱曲线的详细特征"""
-        selected_item = self.file_list.selectedItems()[0]
-        curve_name = selected_item.text()
+        try:
+            selected_item = self.file_list.selectedItems()[0]
+            curve_name = selected_item.text()
 
-        if curve_name not in self.spectra_data:
-            QMessageBox.warning(self, "无法分析", f"未找到选中曲线 '{curve_name}' 的数据。")
-            return
+            if curve_name not in self.spectra_data:
+                QMessageBox.warning(self, "无法分析", f"未找到选中曲线 '{curve_name}' 的数据。")
+                return
 
-        # 获取当前波长范围
-        wl_min = float(self.wl_min.currentText())
-        wl_max = float(self.wl_max.currentText())
+            # 获取当前波长范围
+            wl_min = float(self.wl_min.currentText())
+            wl_max = float(self.wl_max.currentText())
 
-        # 获取曲线数据并筛选波长范围
-        wavelength, reflectance = self.spectra_data[curve_name]
-        mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+            # 获取曲线数据并筛选波长范围
+            wavelength, reflectance = self.spectra_data[curve_name]
+            mask = (wavelength >= wl_min) & (wavelength <= wl_max)
 
-        filtered_data = (wavelength[mask], reflectance[mask])
+            filtered_data = (wavelength[mask], reflectance[mask])
 
-        # 查找曲线在当前显示中的索引
-        curve_index = -1
-        for i, label in enumerate(self.canvas.axes.get_legend().get_texts()):
-            if label.get_text() == curve_name:
-                curve_index = i
-                break
+            # 查找曲线在当前显示中的索引
+            curve_index = -1
+            legend = self.canvas.axes.get_legend()
+            if legend is not None:
+                for i, label in enumerate(legend.get_texts()):
+                    if label.get_text() == curve_name:
+                        curve_index = i
+                        break
 
-        if np.sum(mask) < 5:
-            QMessageBox.warning(self, "无法分析", f"当前波长范围内的数据点不足，无法进行分析。")
-            return
+            if np.sum(mask) < 5:
+                QMessageBox.warning(self, "无法分析", f"当前波长范围内的数据点不足，无法进行分析。")
+                return
 
-        # 创建并显示单条曲线分析对话框
-        dialog = SingleCurveAnalysisDialog(self, filtered_data, curve_name, curve_index)
-        dialog.exec_()
+            # 创建并显示单条曲线分析对话框
+            dialog = SingleCurveAnalysisDialog(self, filtered_data, curve_name, curve_index)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "分析错误", f"分析曲线时出错: {str(e)}")
+            print(f"分析曲线错误: {e}")
 
     def load_csv_file(self):
         """加载单个CSV文件并解析数据"""
@@ -3463,7 +3477,7 @@ class SpectralViewer(QMainWindow):
             clear_all_action.triggered.connect(self.clear_all_wavelengths)
             context_menu.addAction(clear_all_action)
 
-        context_menu.exec_(self.wavelength_list.mapToGlobal(position))
+        context_menu.exec(self.wavelength_list.mapToGlobal(position))
 
     def remove_selected_wavelength(self):
         """移除选中的波长"""
@@ -3513,8 +3527,8 @@ if __name__ == '__main__':
     font = QFont("Microsoft YaHei")
     app.setFont(font)
 
-    # 使用Windows风格，这在Windows平台上通常能确保正确显示窗口装饰
-    app.setStyle('Windows')
+    # 使用Fusion风格，这在Windows平台上通常能确保正确显示窗口装饰
+    app.setStyle('fusion')
 
     # 创建主窗口
     window = SpectralViewer()
