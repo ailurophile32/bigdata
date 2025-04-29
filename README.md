@@ -16,7 +16,7 @@
 ## 系统要求
 
 - Python 3.12 或更高版本
-- PyQt5
+- PyQt6
 - Matplotlib
 - NumPy
 - Pandas
@@ -27,7 +27,7 @@
 2. 安装所需依赖库:
 
 ```bash
-pip install PyQt5 matplotlib numpy pandas
+pip install PyQt6 matplotlib numpy pandas
 ```
 
 ## 使用方法
@@ -57,10 +57,10 @@ python spectra_viewer.py
 ## 开发说明
 
 此应用程序使用:
-- PyQt5构建用户界面
+- PyQt6构建用户界面
 - Matplotlib实现数据可视化
 - NumPy进行数据处理
 
 ## 许可证
 
-MIT 许可证 
+MIT 许可证

@@ -7,18 +7,18 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QFileDialog,
-                            QListWidget, QSplitter, QCheckBox, QComboBox, 
+                            QListWidget, QSplitter, QCheckBox, QComboBox,
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
-                            QMenu, QAction, QTextEdit, QDialog, QTableWidget,
-                            QTableWidgetItem, QTabWidget, QHeaderView, QStyle,
+                            QMenu, QTextEdit, QDialog, QTableWidget,
+                            QTableWidgetItem, QTabWidget, QHeaderView,
                             QLineEdit)
-from PyQt5.QtCore import Qt, QDir, QTextCodec, QPoint
-from PyQt5.QtGui import QColor, QFont, QBrush
-from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
+from PyQt6.QtCore import Qt, QDir, QPoint
+from PyQt6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
+from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 import random
 import matplotlib
 from scipy import stats
@@ -38,40 +38,40 @@ matplotlib.rcParams['font.family'] = 'sans-serif'
 
 class BaseAnalysisDialog(QDialog):
     """分析对话框的基类"""
-    
+
     def __init__(self, parent=None, title="分析结果"):
         super().__init__(parent)
         self.setWindowTitle(title)
-        
+
         # 获取屏幕尺寸并设置窗口为屏幕的80%大小
-        screen = QApplication.desktop().screenGeometry()
+        screen = QApplication.primaryScreen().availableGeometry()
         width = int(screen.width() * 0.8)
         height = int(screen.height() * 0.8)
         self.setGeometry((screen.width() - width) // 2, (screen.height() - height) // 2, width, height)
-        
+
         # 设置窗口标志，允许最大化
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
         self.setModal(True)
-        
+
         # 创建主布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
-        
+
         # 创建顶部标题栏布局
         title_bar = QWidget()
         title_bar.setFixedHeight(40)
         title_bar.setStyleSheet("background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0;")
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(10, 0, 10, 0)
-        
+
         # 标题文本
         title_label = QLabel(title)
         title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         title_layout.addWidget(title_label)
-        
+
         # 添加标题栏到主布局
         self.main_layout.addWidget(title_bar)
-        
+
         # 创建内容区域
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout(self.content_widget)
@@ -79,26 +79,26 @@ class BaseAnalysisDialog(QDialog):
 
 class AnalysisResultDialog(BaseAnalysisDialog):
     """用于显示光谱分析结果的对话框"""
-    
+
     def __init__(self, parent=None, title="光谱差异分析结果"):
         super().__init__(parent, title)
-        
+
         # 创建文本显示区域
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)  # 设置为只读
         self.result_text.setFont(QFont("Microsoft YaHei", 10))
         self.content_layout.addWidget(self.result_text)
-    
+
     def set_result_text(self, text):
         """设置结果文本"""
         self.result_text.setHtml(text)
 
 class SingleCurveAnalysisDialog(BaseAnalysisDialog):
     """单条光谱曲线分析对话框"""
-    
+
     def __init__(self, parent=None, curve_data=None, curve_name="", curve_index=0):
         """初始化单条曲线分析对话框
-        
+
         Args:
             parent: 父窗口
             curve_data: 元组(波长数组, 反射率数组)
@@ -106,28 +106,28 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             curve_index: 曲线在主图表中的索引
         """
         super().__init__(parent, f"单条曲线分析 - {curve_name}")
-        
+
         # 存储曲线数据
         self.wavelength, self.reflectance = curve_data
         self.curve_name = curve_name
         self.curve_index = curve_index
         self.parent = parent
-        
+
         # 创建标签页控件
         self.tab_widget = QTabWidget()
-        
+
         # 添加各个分析标签页
         self.add_statistics_tab()
         self.add_derivative_tab()
         self.add_region_analysis_tab()
         self.add_features_tab()
-        
+
         # 如果存在标准曲线，添加比对分析标签页
         if hasattr(self.parent, 'reference_curve') and self.parent.reference_curve is not None:
             self.add_reference_comparison_tab()
-        
+
         self.content_layout.addWidget(self.tab_widget)
-        
+
         # 添加关闭按钮
         self.buttons_layout = QHBoxLayout()
         self.close_btn = QPushButton("关闭")
@@ -135,23 +135,23 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         self.buttons_layout.addStretch()
         self.buttons_layout.addWidget(self.close_btn)
         self.content_layout.addLayout(self.buttons_layout)
-    
+
     def add_statistics_tab(self):
         """添加基础统计分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # 创建统计信息表格
         stats_table = QTableWidget()
         stats_table.setColumnCount(2)
         stats_table.setHorizontalHeaderLabels(["统计指标", "数值"])
         stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
-        
+
         if len(valid_reflectance) > 0:
             # 计算统计指标
             stats_data = [
@@ -170,26 +170,26 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 ("四分位数(Q3)", f"{np.percentile(valid_reflectance, 75):.2f}%"),
                 ("四分位距(IQR)", f"{np.percentile(valid_reflectance, 75) - np.percentile(valid_reflectance, 25):.2f}"),
             ]
-            
+
             # 填充表格
             stats_table.setRowCount(len(stats_data))
             for i, (metric, value) in enumerate(stats_data):
                 stats_table.setItem(i, 0, QTableWidgetItem(metric))
                 stats_table.setItem(i, 1, QTableWidgetItem(str(value)))
-        
+
         # 创建直方图和QQ图
         if len(valid_reflectance) > 5:
             fig = Figure(figsize=(9, 5))
             canvas = FigureCanvas(fig)
-            
+
             # 创建直方图
             ax1 = fig.add_subplot(121)
-            ax1.hist(valid_reflectance, bins=min(20, len(valid_reflectance)//5), 
+            ax1.hist(valid_reflectance, bins=min(20, len(valid_reflectance)//5),
                    density=True, alpha=0.7, color='skyblue')
             ax1.set_xlabel('反射率 (%)')
             ax1.set_ylabel('频率')
             ax1.set_title('反射率直方图')
-            
+
             # 添加正态分布曲线进行比较
             xmin, xmax = ax1.get_xlim()
             x = np.linspace(xmin, xmax, 100)
@@ -197,58 +197,58 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             std = np.std(valid_reflectance)
             p = stats.norm.pdf(x, mean, std)
             ax1.plot(x, p, 'k', linewidth=1)
-            
+
             # 创建QQ图
             ax2 = fig.add_subplot(122)
             # 直接使用已导入的probplot函数
             probplot(valid_reflectance, plot=ax2)
             ax2.set_title('QQ图 (检验正态性)')
-            
+
             fig.tight_layout()
         else:
             canvas = QLabel("数据点不足，无法创建图表")
-        
+
         layout.addWidget(stats_table)
         layout.addWidget(canvas)
-        
+
         self.tab_widget.addTab(tab, "基础统计")
 
     def add_derivative_tab(self):
         """添加导数分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
-        
+
         if len(valid_reflectance) < 5:
             layout.addWidget(QLabel("数据点不足，无法计算导数"))
             self.tab_widget.addTab(tab, "导数分析")
             return
-        
+
         # 计算一阶和二阶导数
         # 确定窗口大小 - 必须是奇数且小于数据点数
         window_length = min(11, len(valid_reflectance) // 5 * 2 + 1)
         if window_length % 2 == 0:
             window_length -= 1
-        
+
         if window_length >= 3:
             # 平滑处理
             smoothed = savgol_filter(valid_reflectance, window_length, 2)
-            
+
             # 计算导数
             dx = np.diff(valid_wavelength)
             first_derivative = np.diff(smoothed) / dx
             second_derivative = np.diff(first_derivative) / dx[:-1]
-            
+
             # 创建图表
             fig = Figure(figsize=(9, 8))
-            
+
             # 反射率曲线
             ax1 = fig.add_subplot(311)
-            ax1.plot(valid_wavelength, valid_reflectance, 'o-', markersize=2, 
+            ax1.plot(valid_wavelength, valid_reflectance, 'o-', markersize=2,
                    label='原始数据')
             ax1.plot(valid_wavelength, smoothed, '-', label='平滑后')
             ax1.set_xlabel('波长 (nm)')
@@ -256,7 +256,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             ax1.set_title('反射率曲线')
             ax1.legend()
             ax1.grid(True, linestyle='--', alpha=0.7)
-            
+
             # 一阶导数
             ax2 = fig.add_subplot(312)
             ax2.plot(valid_wavelength[:-1], first_derivative, '-')
@@ -264,7 +264,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             ax2.set_ylabel('一阶导数')
             ax2.set_title('一阶导数曲线')
             ax2.grid(True, linestyle='--', alpha=0.7)
-            
+
             # 寻找一阶导数的零点(极值点)
             zero_crosses = []
             for i in range(1, len(first_derivative)):
@@ -273,20 +273,20 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                     # 线性插值找到零点
                     wl_cross = valid_wavelength[i-1] + dx[i-1] * (-first_derivative[i-1]) / (first_derivative[i] - first_derivative[i-1])
                     zero_crosses.append((wl_cross, i))
-            
+
             # 标记一阶导数的零点
             if zero_crosses:
                 zero_x = [x for x, _ in zero_crosses[:10]]  # 最多显示10个
                 zero_y = np.interp(zero_x, valid_wavelength, smoothed)
                 ax1.plot(zero_x, zero_y, 'ro', label='极值点')
-                
+
                 # 最多标注前5个
                 for i, (x, idx) in enumerate(zero_crosses[:5]):
                     y = np.interp(x, valid_wavelength, smoothed)
-                    ax1.annotate(f"极值{i+1}", (x, y), xytext=(10, 10), 
-                               textcoords='offset points', 
+                    ax1.annotate(f"极值{i+1}", (x, y), xytext=(10, 10),
+                               textcoords='offset points',
                                arrowprops=dict(arrowstyle='->'))
-            
+
             # 二阶导数
             ax3 = fig.add_subplot(313)
             ax3.plot(valid_wavelength[:-2], second_derivative, '-')
@@ -294,7 +294,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             ax3.set_ylabel('二阶导数')
             ax3.set_title('二阶导数曲线')
             ax3.grid(True, linestyle='--', alpha=0.7)
-            
+
             # 找到二阶导数的零点(拐点)
             inflections = []
             for i in range(1, len(second_derivative)):
@@ -303,23 +303,23 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                     # 线性插值找到零点
                     wl_cross = valid_wavelength[i] + dx[i] * (-second_derivative[i-1]) / (second_derivative[i] - second_derivative[i-1])
                     inflections.append((wl_cross, i))
-            
+
             # 在原曲线上标记拐点
             if inflections:
                 infl_x = [x for x, _ in inflections[:10]]  # 最多显示10个
                 infl_y = np.interp(infl_x, valid_wavelength, smoothed)
                 ax1.plot(infl_x, infl_y, 'gx', label='拐点')
-                
+
                 # 最多标注前5个
                 for i, (x, idx) in enumerate(inflections[:5]):
                     y = np.interp(x, valid_wavelength, smoothed)
-                    ax1.annotate(f"拐点{i+1}", (x, y), xytext=(10, -20), 
-                               textcoords='offset points', 
+                    ax1.annotate(f"拐点{i+1}", (x, y), xytext=(10, -20),
+                               textcoords='offset points',
                                arrowprops=dict(arrowstyle='->'))
-            
+
             ax1.legend()
             fig.tight_layout()
-            
+
             # 创建文本说明
             text_info = ""
             if zero_crosses:
@@ -327,40 +327,40 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 for i, (wl, _) in enumerate(zero_crosses[:10]):  # 最多显示10个
                     y = np.interp(wl, valid_wavelength, smoothed)
                     text_info += f"    极值点{i+1}: 波长={wl:.1f}nm, 反射率={y:.2f}%\n"
-            
+
             if inflections:
                 text_info += "\n检测到的拐点:\n"
                 for i, (wl, _) in enumerate(inflections[:10]):  # 最多显示10个
                     y = np.interp(wl, valid_wavelength, smoothed)
                     text_info += f"    拐点{i+1}: 波长={wl:.1f}nm, 反射率={y:.2f}%\n"
-            
+
             info_label = QLabel(text_info)
             info_label.setStyleSheet("font-family: monospace;")
-            
+
             canvas = FigureCanvas(fig)
-            
+
             layout.addWidget(canvas)
             layout.addWidget(info_label)
         else:
             layout.addWidget(QLabel("数据点不足，无法进行平滑和导数计算"))
-        
+
         self.tab_widget.addTab(tab, "导数分析")
 
     def add_region_analysis_tab(self):
         """添加区域分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
-        
+
         if len(valid_reflectance) < 5:
             layout.addWidget(QLabel("数据点不足，无法进行区域分析"))
             self.tab_widget.addTab(tab, "区域分析")
             return
-        
+
         # 定义常见的光谱区域
         regions = [
             (350, 450, "紫外-蓝光"),
@@ -370,7 +370,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             (620, 750, "红光"),
             (750, 1050, "近红外")
         ]
-        
+
         # 定义马卡龙色系映射，对应各个光谱区域的真实颜色
         region_colors = {
             "紫外-蓝光": "#9370DB",  # 紫罗兰色
@@ -380,16 +380,16 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             "红光": "#FF6347",      # 番茄红
             "近红外": "#F08080"     # 浅珊瑚色
         }
-        
+
         # 创建区域分析表格
         region_table = QTableWidget()
         region_table.setColumnCount(7)
         region_table.setHorizontalHeaderLabels([
-            "波长区域", "平均反射率", "标准差", 
+            "波长区域", "平均反射率", "标准差",
             "最大值", "最大值波长", "最小值", "最小值波长"
         ])
         region_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
         # 区域分析图表
         fig = Figure(figsize=(9, 6), dpi=100)
         ax = fig.add_subplot(111)
@@ -397,25 +397,25 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         ax.set_ylabel('反射率 (%)', fontsize=10)
         ax.set_title('区域分析', fontsize=12, fontweight='bold')
         ax.grid(True, linestyle='--', alpha=0.7)
-        
+
         # 首先绘制原始光谱曲线
         ax.plot(valid_wavelength, valid_reflectance, 'k-', linewidth=1.5, label=self.curve_name)
-        
+
         # 为每个区域计算统计量
         region_stats = []
         valid_regions = []
-        
+
         for wl_min, wl_max, region_name in regions:
             # 检查是否有数据在此区域
             mask = (valid_wavelength >= wl_min) & (valid_wavelength <= wl_max)
             if np.any(mask) and np.sum(mask) >= 3:  # 至少需要3个点
                 region_refl = valid_reflectance[mask]
                 region_wl = valid_wavelength[mask]
-                
+
                 # 计算区域统计量
                 mean_val = np.mean(region_refl)
                 std_val = np.std(region_refl)
-                
+
                 # 查找最大值和最小值，以及它们对应的波长
                 max_idx = np.argmax(region_refl)
                 min_idx = np.argmin(region_refl)
@@ -423,35 +423,35 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 min_val = region_refl[min_idx]
                 max_wl = region_wl[max_idx]
                 min_wl = region_wl[min_idx]
-                
+
                 region_stats.append((region_name, mean_val, std_val, max_val, max_wl, min_val, min_wl))
                 valid_regions.append((wl_min, wl_max, region_name))
-                
+
                 # 添加区域背景，使用马卡龙色系映射
                 region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
                 ax.axvspan(wl_min, wl_max, alpha=0.25, color=region_color)
-                
+
                 # 添加区域标签
                 ax.text((wl_min + wl_max) / 2, ax.get_ylim()[1] * 0.95,
                        region_name, ha='center', fontsize=8,
-                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color, 
+                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color,
                                 boxstyle='round,pad=0.2', linewidth=1))
-                
+
                 # 标记最大值和最小值
                 ax.plot(max_wl, max_val, 'ro', markersize=4)
                 ax.plot(min_wl, min_val, 'go', markersize=4)
-                
+
                 # 为最大值和最小值添加文本标注（位置更合理）
-                ax.annotate(f"{max_val:.1f}%", 
+                ax.annotate(f"{max_val:.1f}%",
                            (max_wl, max_val), xytext=(0, 5),
                            textcoords='offset points', fontsize=7,
                            color='red', fontweight='bold', ha='center')
-                           
-                ax.annotate(f"{min_val:.1f}%", 
+
+                ax.annotate(f"{min_val:.1f}%",
                            (min_wl, min_val), xytext=(0, -10),
                            textcoords='offset points', fontsize=7,
                            color='green', fontweight='bold', ha='center')
-        
+
         # 填充表格
         region_table.setRowCount(len(region_stats))
         for i, (name, mean_val, std_val, max_val, max_wl, min_val, min_wl) in enumerate(region_stats):
@@ -462,18 +462,18 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             region_table.setItem(i, 4, QTableWidgetItem(f"{max_wl:.2f}nm"))
             region_table.setItem(i, 5, QTableWidgetItem(f"{min_val:.2f}%"))
             region_table.setItem(i, 6, QTableWidgetItem(f"{min_wl:.2f}nm"))
-        
+
         # 设置表格自适应内容
         region_table.resizeRowsToContents()
         region_table.resizeColumnsToContents()
-        
+
         # 添加区域高亮按钮
         buttons_widget = QWidget()
         highlight_layout = QHBoxLayout(buttons_widget)
         highlight_layout.setContentsMargins(0, 5, 0, 5)
         highlight_label = QLabel("高亮显示区域:")
         highlight_layout.addWidget(highlight_label)
-        
+
         buttons = []
         for wl_min, wl_max, region_name in valid_regions:
             btn = QPushButton(region_name)
@@ -482,39 +482,39 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             btn.clicked.connect(self.highlight_region)
             highlight_layout.addWidget(btn)
             buttons.append(btn)
-        
+
         # 添加取消高亮按钮
         if buttons:
             clear_btn = QPushButton("清除高亮")
             clear_btn.clicked.connect(self.clear_highlight)
             highlight_layout.addWidget(clear_btn)
-        
+
         highlight_layout.addStretch()
-        
+
         # 创建画布并设置尺寸策略
         canvas = FigureCanvas(fig)
         canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
+
         # 创建并添加导航工具栏
         toolbar = NavigationToolbar(canvas, tab)
-        
+
         # 调整布局：表格在上，图在中间，按钮在底部
         layout.addWidget(region_table)
         layout.addWidget(toolbar)
         layout.addWidget(canvas)
         layout.addWidget(buttons_widget)
-        
+
         fig.tight_layout()
-        
+
         self.tab_widget.addTab(tab, "区域分析")
-    
+
     def highlight_region(self):
         """高亮显示特定波长区域"""
         sender = self.sender()
         wl_min = sender.property("wl_min")
         wl_max = sender.property("wl_max")
         region_name = sender.text()
-        
+
         # 获取区域对应的马卡龙颜色
         region_colors = {
             "紫外-蓝光": "#9370DB",  # 紫罗兰色
@@ -525,18 +525,18 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             "近红外": "#F08080"     # 浅珊瑚色
         }
         color = region_colors.get(region_name, "yellow")
-        
+
         # 调用父窗口中的画布来高亮显示区域
         if hasattr(self.parent, 'canvas') and self.parent.canvas is not None:
             try:
                 # 使用对应区域的马卡龙颜色
                 self.parent.canvas.highlight_curve_segment(
-                    self.curve_index, wl_min, wl_max, 
+                    self.curve_index, wl_min, wl_max,
                     color=color, alpha=0.5
                 )
             except Exception as e:
                 print(f"高亮区域出错: {e}")
-    
+
     def clear_highlight(self):
         """清除高亮显示"""
         if hasattr(self.parent, 'canvas') and self.parent.canvas is not None:
@@ -555,39 +555,39 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         """添加特征点分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
-        
+
         if len(valid_reflectance) < 5:
             # 数据点太少，无法进行特征点分析
             layout.addWidget(QLabel("数据点不足，无法进行特征点分析。"))
             self.tab_widget.addTab(tab, "特征点分析")
             return
-        
+
         # 创建图表
         fig = Figure(figsize=(9, 6))
         canvas = FigureCanvas(fig)
-        
+
         # 平滑处理
         window_length = min(15, len(valid_reflectance) - (len(valid_reflectance) % 2) - 1)
         if window_length < 5:
             window_length = 5
-        
+
         smoothed = savgol_filter(valid_reflectance, window_length, 3)
-        
+
         # 查找峰值和谷值
         # 使用相对高度参数来确保只找到明显的峰值和谷值
         peaks, _ = find_peaks(smoothed, height=np.mean(smoothed), distance=5, prominence=0.5)
         valleys, _ = find_peaks(-smoothed, distance=5, prominence=0.5)
-        
+
         # 主图形：显示曲线、峰值和谷值
         ax = fig.add_subplot(111)
         ax.plot(valid_wavelength, valid_reflectance, 'b-', alpha=0.5, label='原始数据')
         ax.plot(valid_wavelength, smoothed, 'g-', label='平滑曲线')
-        
+
         # 标记峰值
         if len(peaks) > 0:
             ax.plot(valid_wavelength[peaks], smoothed[peaks], 'ro', label='峰值')
@@ -596,7 +596,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                            (valid_wavelength[peak], smoothed[peak]),
                            xytext=(0, 10), textcoords='offset points',
                            ha='center', fontsize=8)
-        
+
         # 标记谷值
         if len(valleys) > 0:
             ax.plot(valid_wavelength[valleys], smoothed[valleys], 'mo', label='谷值')
@@ -605,36 +605,36 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                            (valid_wavelength[valley], smoothed[valley]),
                            xytext=(0, -15), textcoords='offset points',
                            ha='center', fontsize=8)
-        
+
         ax.set_xlabel('波长 (nm)')
         ax.set_ylabel('反射率 (%)')
         ax.set_title(f'{self.curve_name} - 特征点分析')
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.legend()
-        
+
         # 创建特征点表格
         features_table = QTableWidget()
         features_table.setColumnCount(3)
         features_table.setHorizontalHeaderLabels(["特征点类型", "波长 (nm)", "反射率 (%)"])
         features_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
         # 计算表格行数
         row_count = len(peaks) + len(valleys)
         features_table.setRowCount(row_count)
-        
+
         # 填充峰值数据
         for i, peak in enumerate(peaks):
             features_table.setItem(i, 0, QTableWidgetItem("峰值"))
             features_table.setItem(i, 1, QTableWidgetItem(f"{valid_wavelength[peak]:.1f}"))
             features_table.setItem(i, 2, QTableWidgetItem(f"{smoothed[peak]:.2f}"))
-        
+
         # 填充谷值数据
         for i, valley in enumerate(valleys):
             row = i + len(peaks)
             features_table.setItem(row, 0, QTableWidgetItem("谷值"))
             features_table.setItem(row, 1, QTableWidgetItem(f"{valid_wavelength[valley]:.1f}"))
             features_table.setItem(row, 2, QTableWidgetItem(f"{smoothed[valley]:.2f}"))
-        
+
         # 添加特征点描述
         features_description = QLabel(
             f"<p>检测到 <b>{len(peaks)}</b> 个峰值和 <b>{len(valleys)}</b> 个谷值。</p>"
@@ -642,13 +642,13 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             f"<p>谷值代表光谱中反射率局部最小的波长位置，通常指示材料对特定波长光的强吸收。</p>"
         )
         features_description.setWordWrap(True)
-        
+
         # 添加控件到布局
         layout.addWidget(canvas)
         layout.addWidget(features_description)
         layout.addWidget(QLabel("<b>特征点数据表</b>"))
         layout.addWidget(features_table)
-        
+
         # 添加到标签页
         self.tab_widget.addTab(tab, "特征点分析")
 
@@ -656,58 +656,58 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         """添加与标准曲线比对分析标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # 获取标准曲线数据
         reference_name = self.parent.reference_curve
         clean_ref_name = reference_name.replace(" [标准]", "")
-        
+
         if clean_ref_name not in self.parent.spectra_data:
             layout.addWidget(QLabel(f"未找到标准曲线：{clean_ref_name}"))
             self.tab_widget.addTab(tab, "标准比对")
             return
-            
+
         # 获取标准曲线数据
         ref_wavelength, ref_reflectance = self.parent.spectra_data[clean_ref_name]
-        
+
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
         valid_wavelength = self.wavelength[mask]
         valid_reflectance = self.reflectance[mask]
-        
+
         ref_mask = ~np.isnan(ref_reflectance)
         valid_ref_wavelength = ref_wavelength[ref_mask]
         valid_ref_reflectance = ref_reflectance[ref_mask]
-        
+
         if len(valid_reflectance) < 5 or len(valid_ref_reflectance) < 5:
             layout.addWidget(QLabel("数据点不足，无法进行比对分析。"))
             self.tab_widget.addTab(tab, "标准比对")
             return
-        
+
         # 创建比对分析结果的HTML
         html_result = "<h2>标准曲线比对分析</h2>"
         html_result += f"<p>当前曲线：<b>{self.curve_name}</b></p>"
         html_result += f"<p>标准曲线：<b>{clean_ref_name}</b></p>"
-        
+
         # 1. 找到两条曲线共同的波长范围
         min_wl = max(np.min(valid_wavelength), np.min(valid_ref_wavelength))
         max_wl = min(np.max(valid_wavelength), np.max(valid_ref_wavelength))
-        
+
         # 限制在共同波长范围内
         current_mask = (valid_wavelength >= min_wl) & (valid_wavelength <= max_wl)
         ref_mask = (valid_ref_wavelength >= min_wl) & (valid_ref_wavelength <= max_wl)
-        
+
         # 检查是否有足够的重叠数据
         if np.sum(current_mask) < 5 or np.sum(ref_mask) < 5:
             html_result += "<p style='color:red'>警告：两条曲线的波长范围重叠度不足，比对结果可能不准确。</p>"
-        
+
         # 创建图表容器
         fig_container = QWidget()
         fig_layout = QVBoxLayout(fig_container)
-        
+
         # 2. 创建直观对比图
         fig1 = Figure(figsize=(10, 6))
         canvas1 = FigureCanvas(fig1)
-        
+
         # 绘制对比图
         ax1 = fig1.add_subplot(111)
         ax1.plot(valid_wavelength, valid_reflectance, 'b-', label=self.curve_name)
@@ -717,35 +717,35 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         ax1.set_title('光谱曲线对比')
         ax1.grid(True, linestyle='--', alpha=0.7)
         ax1.legend()
-        
+
         # 3. 需要插值处理使两条曲线在相同波长点上进行比较
         # 使用当前曲线的波长点作为参考，插值计算标准曲线在这些点上的值
         common_wavelength = valid_wavelength[current_mask]
         current_reflectance = valid_reflectance[current_mask]
-        
+
         # 对标准曲线进行插值
         ref_interp = np.interp(common_wavelength, valid_ref_wavelength, valid_ref_reflectance)
-        
+
         # 4. 计算差异曲线
         diff = current_reflectance - ref_interp
         abs_diff = np.abs(diff)
         rel_diff = np.abs(diff / ref_interp) * 100  # 相对差异百分比
-        
+
         # 5. 计算统计指标
         rmse = np.sqrt(np.mean(diff**2))  # 均方根误差
         mae = np.mean(abs_diff)  # 平均绝对误差
         max_diff = np.max(abs_diff)  # 最大绝对差异
         max_diff_wl = common_wavelength[np.argmax(abs_diff)]  # 最大差异处的波长
-        
+
         # 计算相关系数
         corr_coef = np.corrcoef(current_reflectance, ref_interp)[0, 1]
-        
+
         # 计算光谱角映射(SAM)
         norm_current = current_reflectance / np.linalg.norm(current_reflectance)
         norm_ref = ref_interp / np.linalg.norm(ref_interp)
         sam = np.arccos(np.clip(np.dot(norm_current, norm_ref), -1.0, 1.0))
         sam_deg = np.degrees(sam)
-        
+
         # 添加统计指标表
         html_result += "<h3>统计比对指标</h3>"
         html_result += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
@@ -756,11 +756,11 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         html_result += f"<tr><td>最大绝对差异</td><td>{max_diff:.4f}% (波长: {max_diff_wl:.0f}nm)</td><td>两曲线间的最大差异点</td></tr>"
         html_result += f"<tr><td>光谱角距离(SAM)</td><td>{sam_deg:.2f}°</td><td>衡量光谱形状相似度，值越小越相似</td></tr>"
         html_result += "</table>"
-        
+
         # 绘制差异曲线
         fig2 = Figure(figsize=(10, 6))
         canvas2 = FigureCanvas(fig2)
-        
+
         # 创建两个子图
         ax2 = fig2.add_subplot(211)
         ax2.plot(common_wavelength, diff, 'g-')
@@ -769,7 +769,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         ax2.set_ylabel('差异 (%)')
         ax2.set_title('光谱差异曲线 (当前曲线 - 标准曲线)')
         ax2.grid(True, linestyle='--', alpha=0.7)
-        
+
         # 绘制相对差异曲线
         ax3 = fig2.add_subplot(212)
         ax3.plot(common_wavelength, rel_diff, 'm-')
@@ -777,23 +777,23 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         ax3.set_ylabel('相对差异 (%)')
         ax3.set_title('相对差异百分比')
         ax3.grid(True, linestyle='--', alpha=0.7)
-        
+
         # 添加图表说明
         fig2.tight_layout()
-        
+
         # 添加到布局
         fig_layout.addWidget(canvas1)
         fig_layout.addWidget(canvas2)
-        
+
         # 创建文本结果显示
         text_result = QTextEdit()
         text_result.setReadOnly(True)
         text_result.setHtml(html_result)
-        
+
         # 创建区域分析比对
         html_region_analysis = "<h3>光谱区域对比分析</h3>"
         html_region_analysis += "<p>不同波长区域的特性比对：</p>"
-        
+
         # 定义常见的光谱区域
         regions = [
             (350, 450, "紫外-蓝光"),
@@ -803,11 +803,11 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             (620, 750, "红光"),
             (750, 1050, "近红外")
         ]
-        
+
         # 为每个区域分析两条曲线的差异
         html_region_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
         html_region_analysis += "<tr><th>区域</th><th>波长范围</th><th>当前曲线均值</th><th>标准曲线均值</th><th>差异</th><th>相对差异</th></tr>"
-        
+
         region_diff_data = []
         for wl_min, wl_max, region_name in regions:
             # 检查区域是否在共同波长范围内
@@ -817,80 +817,80 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 if np.sum(region_mask) > 0:
                     current_region = current_reflectance[region_mask]
                     ref_region = ref_interp[region_mask]
-                    
+
                     # 计算区域内的均值
                     current_mean = np.mean(current_region)
                     ref_mean = np.mean(ref_region)
-                    
+
                     # 计算差异
                     diff_mean = current_mean - ref_mean
                     rel_diff_mean = (diff_mean / ref_mean) * 100 if ref_mean != 0 else 0
-                    
+
                     # 添加到表格
                     html_region_analysis += f"<tr><td>{region_name}</td><td>{wl_min}-{wl_max}nm</td>"
                     html_region_analysis += f"<td>{current_mean:.2f}%</td><td>{ref_mean:.2f}%</td>"
                     html_region_analysis += f"<td>{diff_mean:.2f}%</td><td>{rel_diff_mean:.2f}%</td></tr>"
-                    
+
                     region_diff_data.append((wl_min, wl_max, region_name, diff_mean, rel_diff_mean))
-        
+
         html_region_analysis += "</table>"
-        
+
         # 添加特征点比对
         html_feature_analysis = "<h3>特征点比对分析</h3>"
-        
+
         # 平滑处理
         window_length = min(15, len(valid_reflectance) - (len(valid_reflectance) % 2) - 1)
         if window_length < 5:
             window_length = 5
-        
+
         current_smoothed = savgol_filter(valid_reflectance, window_length, 3)
         ref_smoothed = savgol_filter(valid_ref_reflectance, window_length, 3)
-        
+
         # 查找峰值和谷值
         current_peaks, _ = find_peaks(current_smoothed, distance=5, prominence=0.5)
         current_valleys, _ = find_peaks(-current_smoothed, distance=5, prominence=0.5)
-        
+
         ref_peaks, _ = find_peaks(ref_smoothed, distance=5, prominence=0.5)
         ref_valleys, _ = find_peaks(-ref_smoothed, distance=5, prominence=0.5)
-        
+
         # 绘制特征点比对图
         fig3 = Figure(figsize=(10, 6))
         canvas3 = FigureCanvas(fig3)
-        
+
         ax4 = fig3.add_subplot(111)
         ax4.plot(valid_wavelength, current_smoothed, 'b-', label=f"{self.curve_name} (平滑)")
         ax4.plot(valid_ref_wavelength, ref_smoothed, 'r-', label=f"{clean_ref_name} (平滑)")
-        
+
         # 标记当前曲线的峰值和谷值
         if len(current_peaks) > 0:
             ax4.plot(valid_wavelength[current_peaks], current_smoothed[current_peaks], 'bo', label='当前峰值')
         if len(current_valleys) > 0:
             ax4.plot(valid_wavelength[current_valleys], current_smoothed[current_valleys], 'bv', label='当前谷值')
-        
+
         # 标记标准曲线的峰值和谷值
         if len(ref_peaks) > 0:
             ax4.plot(valid_ref_wavelength[ref_peaks], ref_smoothed[ref_peaks], 'ro', label='标准峰值')
         if len(ref_valleys) > 0:
             ax4.plot(valid_ref_wavelength[ref_valleys], ref_smoothed[ref_valleys], 'rv', label='标准谷值')
-        
+
         ax4.set_xlabel('波长 (nm)')
         ax4.set_ylabel('反射率 (%)')
         ax4.set_title('特征点比对')
         ax4.grid(True, linestyle='--', alpha=0.7)
         ax4.legend()
-        
+
         fig3.tight_layout()
-        
+
         # 特征点比对表格
         html_feature_analysis += "<p>峰值比对：</p>"
         html_feature_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
         html_feature_analysis += "<tr><th>当前曲线峰值波长</th><th>当前峰值反射率</th><th>最接近的标准峰值波长</th><th>标准峰值反射率</th><th>波长差异</th></tr>"
-        
+
         # 对每个当前曲线的峰值，找到最接近的标准曲线峰值
         for peak in current_peaks:
             current_peak_wl = valid_wavelength[peak]
             current_peak_refl = current_smoothed[peak]
-            
+
             # 找到最接近的标准峰值
             if len(ref_peaks) > 0:
                 ref_peak_wls = valid_ref_wavelength[ref_peaks]
@@ -898,25 +898,25 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 closest_ref_peak_wl = ref_peak_wls[closest_idx]
                 closest_ref_peak_refl = ref_smoothed[ref_peaks[closest_idx]]
                 wl_diff = current_peak_wl - closest_ref_peak_wl
-                
+
                 html_feature_analysis += f"<tr><td>{current_peak_wl:.1f}nm</td><td>{current_peak_refl:.2f}%</td>"
                 html_feature_analysis += f"<td>{closest_ref_peak_wl:.1f}nm</td><td>{closest_ref_peak_refl:.2f}%</td>"
                 html_feature_analysis += f"<td>{wl_diff:.1f}nm</td></tr>"
         else:
                 html_feature_analysis += f"<tr><td>{current_peak_wl:.1f}nm</td><td>{current_peak_refl:.2f}%</td>"
                 html_feature_analysis += "<td colspan='3'>标准曲线无峰值</td></tr>"
-        
+
         html_feature_analysis += "</table>"
-        
+
         # 谷值比对
         html_feature_analysis += "<p>谷值比对：</p>"
         html_feature_analysis += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
         html_feature_analysis += "<tr><th>当前曲线谷值波长</th><th>当前谷值反射率</th><th>最接近的标准谷值波长</th><th>标准谷值反射率</th><th>波长差异</th></tr>"
-        
+
         for valley in current_valleys:
             current_valley_wl = valid_wavelength[valley]
             current_valley_refl = current_smoothed[valley]
-            
+
             # 找到最接近的标准谷值
             if len(ref_valleys) > 0:
                 ref_valley_wls = valid_ref_wavelength[ref_valleys]
@@ -924,20 +924,20 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 closest_ref_valley_wl = ref_valley_wls[closest_idx]
                 closest_ref_valley_refl = ref_smoothed[ref_valleys[closest_idx]]
                 wl_diff = current_valley_wl - closest_ref_valley_wl
-                
+
                 html_feature_analysis += f"<tr><td>{current_valley_wl:.1f}nm</td><td>{current_valley_refl:.2f}%</td>"
                 html_feature_analysis += f"<td>{closest_ref_valley_wl:.1f}nm</td><td>{closest_ref_valley_refl:.2f}%</td>"
                 html_feature_analysis += f"<td>{wl_diff:.1f}nm</td></tr>"
             else:
                 html_feature_analysis += f"<tr><td>{current_valley_wl:.1f}nm</td><td>{current_valley_refl:.2f}%</td>"
                 html_feature_analysis += "<td colspan='3'>标准曲线无谷值</td></tr>"
-        
+
         html_feature_analysis += "</table>"
-        
+
         # 综合评估
         similarity_score = corr_coef * 100  # 基于相关系数的相似度得分
         feature_similarity = 0
-        
+
         # 计算特征点相似度
         if len(current_peaks) > 0 and len(ref_peaks) > 0:
             peak_diffs = []
@@ -946,20 +946,20 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
                 ref_peak_wls = valid_ref_wavelength[ref_peaks]
                 min_diff = np.min(np.abs(ref_peak_wls - current_peak_wl))
                 peak_diffs.append(min_diff)
-            
+
             avg_peak_diff = np.mean(peak_diffs)
             max_allowed_diff = 20  # 最大允许差异 (nm)
             peak_similarity = max(0, 100 * (1 - avg_peak_diff / max_allowed_diff))
             feature_similarity = peak_similarity
-        
+
         # 综合得分 (相关系数占70%，特征点相似度占30%)
         overall_score = 0.7 * similarity_score
         if feature_similarity > 0:
             overall_score += 0.3 * feature_similarity
-        
+
         # 添加结论
         html_conclusion = "<h3>综合评估与结论</h3>"
-        
+
         if overall_score >= 90:
             match_level = "极高"
             conclusion = "当前曲线与标准曲线高度匹配，各项特征基本一致。"
@@ -975,33 +975,33 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         else:
             match_level = "低"
             conclusion = "当前曲线与标准曲线差异较大，匹配度低。"
-        
+
         html_conclusion += f"<p>相似度得分：<b>{overall_score:.1f}</b>/100</p>"
         html_conclusion += f"<p>匹配程度：<b>{match_level}</b></p>"
         html_conclusion += f"<p>结论：{conclusion}</p>"
-        
+
         # 主要差异点分析
         html_conclusion += "<p><b>主要差异点分析：</b></p><ul>"
-        
+
         # 找出最大差异的区域
         if region_diff_data:
             max_rel_diff_region = max(region_diff_data, key=lambda x: abs(x[4]))
             _, _, region_name, diff_mean, rel_diff_mean = max_rel_diff_region
             html_conclusion += f"<li>{region_name}区域存在最大相对差异：{rel_diff_mean:.2f}%</li>"
-        
+
         # 分析峰值差异
         if len(current_peaks) != len(ref_peaks):
             html_conclusion += f"<li>峰值数量不同：当前曲线有{len(current_peaks)}个峰值，标准曲线有{len(ref_peaks)}个峰值</li>"
-        
+
         # 分析谷值差异
         if len(current_valleys) != len(ref_valleys):
             html_conclusion += f"<li>谷值数量不同：当前曲线有{len(current_valleys)}个谷值，标准曲线有{len(ref_valleys)}个谷值</li>"
-        
+
         # 最大差异点
         html_conclusion += f"<li>最大差异点在波长{max_diff_wl:.0f}nm处，差异值为{max_diff:.2f}%</li>"
-        
+
         html_conclusion += "</ul>"
-        
+
         # 添加建议
         html_conclusion += "<p><b>建议：</b></p>"
         if overall_score >= 80:
@@ -1010,40 +1010,40 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             html_conclusion += "<p>当前曲线与标准曲线较为接近，需要关注差异较大的波长区域，评估影响。</p>"
         else:
             html_conclusion += "<p>当前曲线与标准曲线差异明显，建议分析差异原因，或考虑重新采集数据。</p>"
-        
+
         # 添加到HTML结果
         text_result.setHtml(html_result + html_region_analysis + html_feature_analysis + html_conclusion)
-        
+
         # 添加到布局
         layout.addWidget(text_result)
         layout.addWidget(fig_container)
         layout.addWidget(canvas3)
-        
+
         # 添加到标签页
         self.tab_widget.addTab(tab, "标准比对")
 
 
 class SpectralCanvas(FigureCanvas):
     """用于显示光谱数据的画布类"""
-    
+
     def __init__(self, parent=None, width=10, height=6, dpi=100):
         # 创建MatPlotLib图形和坐标轴
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
-        
+
         # 初始化FigureCanvas
         super(SpectralCanvas, self).__init__(self.fig)
         self.setParent(parent)
-        
+
         # 设置FigureCanvas的大小策略
         FigureCanvas.setSizePolicy(self,
-                                QSizePolicy.Expanding,
-                                QSizePolicy.Expanding)
+                                QSizePolicy.Policy.Expanding,
+                                QSizePolicy.Policy.Expanding)
         FigureCanvas.updateGeometry(self)
-        
+
         # 启用鼠标跟踪，以便接收鼠标事件
         self.setMouseTracking(True)
-        
+
         # 初始化绘图相关的属性
         self.lines = []  # 存储所有曲线
         self.legend_lines = []  # 图例中的线条
@@ -1052,47 +1052,47 @@ class SpectralCanvas(FigureCanvas):
         self._original_xlim = None  # 原始x轴范围
         self._original_ylim = None  # 原始y轴范围
         self._show_grid = True      # 网格状态
-        
+
         # 鼠标拖动相关变量
         self._pan_enabled = False
         self._pan_start_x = 0
         self._pan_start_y = 0
         self._pan_start_xlim = None
         self._pan_start_ylim = None
-        
+
         # 启用交互性支持
         # 这些连接使得我们能够对图中的对象进行交互式操作
         self.fig.canvas.mpl_connect('pick_event', self.on_pick)
         self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
-        
+
         # 设置波长标记相关的属性
         self.wavelength_markers = []
         self.wavelength_annotations = []
         self.wavelength_vlines = []
         self.wavelength_labels = []
-        
+
         # 添加视图变化事件的监听，以更新波长标记
         self.axes.callbacks.connect('xlim_changed', self._on_view_changed)
         self.axes.callbacks.connect('ylim_changed', self._on_view_changed)
-        
+
         # 设置绘图样式
         self.fig.set_facecolor('white')
         self.axes.grid(True, linestyle='--', alpha=0.7)
         self.axes.set_xlabel('波长 (nm)', fontsize=12)
         self.axes.set_ylabel('反射率 (%)', fontsize=12)
-    
+
     def _on_view_changed(self, event):
         """当视图范围变化时调用此方法，更新波长标记"""
         # 防止在初始化或清除时触发
         if not hasattr(self, 'wavelength_vlines') or not self.wavelength_vlines:
             return
-            
+
         # 获取当前所有波长值
         wavelengths = [vline.get_xdata()[0] for vline in self.wavelength_vlines]
         if wavelengths:
             # 使用延迟执行，避免在频繁缩放时过度重绘
             self.delayed_update_wavelength_markers(wavelengths)
-            
+
     def delayed_update_wavelength_markers(self, wavelengths):
         """延迟更新波长标记，避免频繁重绘"""
         # 清除现有标记
@@ -1101,10 +1101,10 @@ class SpectralCanvas(FigureCanvas):
         self.add_wavelength_markers(wavelengths)
         # 使用draw_idle延迟绘制
         self.draw_idle()
-    
+
     def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None):
         """绘制多条光谱曲线
-        
+
         Args:
             spectra_dict: 包含多个光谱数据的字典 {显示标签: (波长数组, 反射率数组)}
             title: 图表标题
@@ -1115,7 +1115,7 @@ class SpectralCanvas(FigureCanvas):
         self.legend_lines = []
         self.highlighted_line = None
         self.original_linewidths = {}
-        
+
         # 添加光谱区域背景
         # 定义常见光谱区域
         regions = [
@@ -1126,7 +1126,7 @@ class SpectralCanvas(FigureCanvas):
             (620, 750, "红光"),
             (750, 1050, "近红外")
         ]
-        
+
         # 添加马卡龙色系背景
         region_colors = {
             "紫外-蓝光": "#9370DB",  # 紫罗兰色
@@ -1136,18 +1136,18 @@ class SpectralCanvas(FigureCanvas):
             "红光": "#FF6347",      # 番茄红
             "近红外": "#F08080"     # 浅珊瑚色
         }
-        
+
         # 获取全局波长范围
         global_min_wl = float('inf')
         global_max_wl = float('-inf')
-        
+
         for label, (wavelength, reflectance) in spectra_dict.items():
             mask = ~np.isnan(reflectance)
             valid_wavelength = wavelength[mask]
             if len(valid_wavelength) > 0:
                 global_min_wl = min(global_min_wl, np.min(valid_wavelength))
                 global_max_wl = max(global_max_wl, np.max(valid_wavelength))
-        
+
         # 确保有有效的全局波长范围
         if global_min_wl != float('inf') and global_max_wl != float('-inf'):
             # 为每个区域添加背景色
@@ -1157,146 +1157,146 @@ class SpectralCanvas(FigureCanvas):
                     # 调整区域边界以适应全局范围
                     effective_wl_min = max(wl_min, global_min_wl)
                     effective_wl_max = min(wl_max, global_max_wl)
-                    
+
                     # 添加区域背景
                     region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
                     self.axes.axvspan(effective_wl_min, effective_wl_max, alpha=0.25, color=region_color)
-                    
+
                     # 为了错开标签，交替使用两种不同的y位置
                     y_pos = 0.02 if regions.index((wl_min, wl_max, region_name)) % 2 == 0 else 0.07
-                    
+
                     # 添加小的区域标签，使用交替的位置
-                    self.axes.text((effective_wl_min + effective_wl_max) / 2, y_pos, 
+                    self.axes.text((effective_wl_min + effective_wl_max) / 2, y_pos,
                                region_name, ha='center', va='bottom', fontsize=8,
                                transform=self.axes.get_xaxis_transform(), color='black',
-                               bbox=dict(facecolor='white', alpha=0.7, edgecolor=region_color, 
+                               bbox=dict(facecolor='white', alpha=0.7, edgecolor=region_color,
                                         boxstyle='round,pad=0.2', linewidth=1))
-        
+
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
-        
+
         # 找出标准曲线在列表中的位置
         reference_idx = -1
         for i, label in enumerate(spectra_dict.keys()):
             if reference_curve and label.replace(" [标准]", "") == reference_curve:
                 reference_idx = i
                 break
-        
+
         # 先绘制非标准曲线
         for i, (label, (wavelength, reflectance)) in enumerate(spectra_dict.items()):
             # 如果是标准曲线，稍后绘制
             if i == reference_idx:
                 continue
-                
+
             # 移除NaN值
             mask = ~np.isnan(reflectance)
-            
+
             # 绘制曲线，保存线条引用，并设置pickradius使曲线更容易被选中
-            line, = self.axes.plot(wavelength[mask], reflectance[mask], 
-                                  label=label, color=colors[i], 
+            line, = self.axes.plot(wavelength[mask], reflectance[mask],
+                                  label=label, color=colors[i],
                                   linewidth=1.5, picker=5)
-            
+
             # 保存线条引用和原始线宽
             self.lines.append(line)
             self.original_linewidths[line] = line.get_linewidth()
-        
+
         # 如果有标准曲线，最后绘制它（使其位于最上层）
         if reference_idx >= 0:
             label = list(spectra_dict.keys())[reference_idx]
             wavelength, reflectance = spectra_dict[label]
-            
+
             # 移除NaN值
             mask = ~np.isnan(reflectance)
-            
+
             # 使用更醒目的样式绘制标准曲线
-            line, = self.axes.plot(wavelength[mask], reflectance[mask], 
-                                 label=f"{label} [标准]", color='red', 
+            line, = self.axes.plot(wavelength[mask], reflectance[mask],
+                                 label=f"{label} [标准]", color='red',
                                  linewidth=2.5, linestyle='-', picker=5)
-            
+
             # 添加标准曲线的指示标签
             last_valid_idx = np.where(mask)[0][-1]
-            self.axes.annotate('标准曲线', 
+            self.axes.annotate('标准曲线',
                              xy=(wavelength[last_valid_idx], reflectance[last_valid_idx]),
                              xytext=(10, 0), textcoords='offset points',
                              fontsize=9, fontweight='bold', color='red',
                              bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="red", alpha=0.8))
-            
+
             # 保存线条引用和原始线宽
             self.lines.append(line)
             self.original_linewidths[line] = line.get_linewidth()
-        
+
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_ylabel('反射率 (%)')
         self.axes.set_title(title)
-        
+
         # 应用当前的网格状态 - 使用属性而不是直接访问变量
         self.axes.grid(self._show_grid, linestyle='--', alpha=0.7)
-        
+
         # 创建图例，并设置可点击
         if len(spectra_dict) > 10:
             # 对于大量曲线，将图例放在图外右侧
-            legend = self.axes.legend(loc='center left', bbox_to_anchor=(1, 0.5), 
+            legend = self.axes.legend(loc='center left', bbox_to_anchor=(1, 0.5),
                                      fontsize='small', frameon=True)
             self.fig.subplots_adjust(right=0.75)  # 为图例留出空间
         else:
             legend = self.axes.legend(loc='best', fontsize='medium', frameon=True)
-        
-        # 设置图例可点击    
+
+        # 设置图例可点击
         for legline in legend.get_lines():
             legline.set_picker(10)  # 增大点击检测范围
-            
+
         # 保存图例中的线条引用
         self.legend_lines = legend.get_lines()
-        
+
         self.fig.tight_layout()
-        
+
         # 保存原始视图范围
         self._original_xlim = self.axes.get_xlim()
         self._original_ylim = self.axes.get_ylim()
-        
+
         self.draw()
-        
+
     def reset_view(self):
         """重置视图到原始范围"""
         if self._original_xlim is not None and self._original_ylim is not None:
             self.axes.set_xlim(self._original_xlim)
             self.axes.set_ylim(self._original_ylim)
-            
+
             # 在重置视图后更新波长标记
             wavelengths = []
             if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
                 for vline in self.wavelength_vlines:
                     wavelengths.append(vline.get_xdata()[0])
-            
+
             if wavelengths:
                 self.clear_wavelength_markers()
                 self.add_wavelength_markers(wavelengths)
-                
+
             self.draw()
-    
+
     def wheelEvent(self, event):
         # 检查是否按下了Ctrl键
-        if event.modifiers() & Qt.ControlModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             # 获取原始鼠标位置
-            pos = event.pos()
-            
+            pos = event.position().toPoint()
+
             # 获取鼠标位置对应的数据坐标（重要：必须使用正确的坐标变换）
             ax = self.axes
             width, height = self.get_width_height()
             x_pos = pos.x() / width
             y_pos = (height - pos.y()) / height  # 注意Y轴方向
-            
+
             # 获取当前视图范围
             xmin, xmax = ax.get_xlim()
             ymin, ymax = ax.get_ylim()
-            
+
             # 计算鼠标所指向的数据点坐标
             data_x = xmin + (xmax - xmin) * x_pos
             data_y = ymin + (ymax - ymin) * y_pos
-            
+
             # 计算缩放系数
             base_scale = 1.2
-            
+
             # 根据滚轮方向确定缩放方向
             if event.angleDelta().y() > 0:
                 # 放大
@@ -1304,60 +1304,60 @@ class SpectralCanvas(FigureCanvas):
             else:
                 # 缩小
                 scale_factor = base_scale
-                
+
             # 计算新的数据范围
             new_width = (xmax - xmin) * scale_factor
             new_height = (ymax - ymin) * scale_factor
-            
+
             # 计算新的坐标范围，确保鼠标位置指向的数据点保持不变
             new_xmin = data_x - x_pos * new_width
             new_ymin = data_y - y_pos * new_height
-            
+
             # 设置新的坐标范围
             ax.set_xlim(new_xmin, new_xmin + new_width)
             ax.set_ylim(new_ymin, new_ymin + new_height)
-            
+
             # 保存当前的波长标记，以便在缩放后更新
             wavelengths = []
             if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
                 # 从垂直线获取波长值
                 for vline in self.wavelength_vlines:
                     wavelengths.append(vline.get_xdata()[0])
-            
+
             # 如果有波长标记，先清除再重新添加
             if wavelengths:
                 self.clear_wavelength_markers()
                 self.add_wavelength_markers(wavelengths)
-            
+
             # 使用draw_idle()进行延迟绘制，提高性能
             self.draw_idle()
-            
+
             # 标记事件已处理
             event.accept()
         else:
             # 调用父类方法处理默认行为
             super().wheelEvent(event)
-    
+
     def on_scroll(self, event):
         """处理matplotlib的滚轮事件（已废弃，改用Qt的wheelEvent）"""
         pass
-    
+
     @property
     def show_grid(self):
         """获取网格显示状态"""
         return self._show_grid
-        
+
     @show_grid.setter
     def show_grid(self, value):
         """设置网格显示状态并立即应用"""
         self._show_grid = value
         self.axes.grid(value, linestyle='--', alpha=0.7)
         self.draw()
-        
+
     def set_grid_visible(self, visible):
         """设置网格显示状态"""
         self.show_grid = visible
-        
+
     def clear_plot(self):
         """清除当前图表"""
         self.axes.clear()
@@ -1368,7 +1368,7 @@ class SpectralCanvas(FigureCanvas):
         # 保持网格状态一致
         self.axes.grid(self._show_grid, linestyle='--', alpha=0.7)
         self.draw()
-        
+
     def on_pick(self, event):
         """处理点击事件"""
         # 检查是否点击了图例中的线条
@@ -1376,71 +1376,71 @@ class SpectralCanvas(FigureCanvas):
             # 获取被点击的图例线条的索引
             legend_line = event.artist
             index = self.legend_lines.index(legend_line)
-            
+
             if index < len(self.lines):
                 # 获取对应的实际曲线
                 line = self.lines[index]
                 # 切换可见性
                 visible = not line.get_visible()
                 line.set_visible(visible)
-                
+
                 # 调整图例线条的alpha值以显示状态
                 if visible:
                     legend_line.set_alpha(1.0)
                 else:
                     legend_line.set_alpha(0.2)
-                
+
                 # 重绘画布
                 self.draw()
                 return
-                
+
         # 为了触发motion_notify_event更新高亮
         self.update_highlight(None)
-    
+
     def on_motion(self, event):
         """处理鼠标移动事件"""
         if event.inaxes == self.axes:
             # 获取鼠标坐标
             x, y = event.xdata, event.ydata
-            
+
             closest_line = None
             min_distance = float('inf')
-            
+
             # 找到最近的线条
             for line in self.lines:
                 if not line.get_visible():
                     continue
-                    
+
                 # 获取线条数据
                 xdata = line.get_xdata()
                 ydata = line.get_ydata()
-                
+
                 # 找到最近的点
                 distances = []
                 for xi, yi in zip(xdata, ydata):
                     # 计算欧几里德距离
                     dist = np.sqrt((x - xi)**2 + (y - yi)**2)
                     distances.append(dist)
-                
+
                 if distances:
                     min_dist = min(distances)
                     if min_dist < min_distance:
                         min_distance = min_dist
                         closest_line = line
-            
+
             # 设置阈值，确定是否足够近
             threshold = (self.axes.get_xlim()[1] - self.axes.get_xlim()[0]) * 0.02
-            
+
             if min_distance < threshold:
                 self.update_highlight(closest_line)
             else:
                 self.update_highlight(None)
         else:
             self.update_highlight(None)
-    
+
     def update_highlight(self, highlight_line):
         """更新突出显示的曲线
-        
+
         Args:
             highlight_line: 要突出显示的曲线索引或名称
         """
@@ -1448,7 +1448,7 @@ class SpectralCanvas(FigureCanvas):
         for line in self.lines:
             line.set_linewidth(1.5)
             line.set_alpha(0.7)
-            
+
         # 如果指定了突出显示的曲线
         if highlight_line is not None:
             # 确定线索引
@@ -1458,24 +1458,24 @@ class SpectralCanvas(FigureCanvas):
                     if line.get_label() == highlight_line:
                         line_idx = i
                         break
-            
+
             # 突出显示指定曲线（如果存在）
             if isinstance(line_idx, int) and 0 <= line_idx < len(self.lines):
                 self.lines[line_idx].set_linewidth(3.0)
                 self.lines[line_idx].set_alpha(1.0)
-        
+
         # 更新图例
         self.update_legend()
-        
+
         # 重绘
         self.draw()
-        
+
     def update_legend(self):
         """更新图例以适应当前的曲线和标记状态"""
         # 移除旧图例
         if hasattr(self, 'legend') and self.legend:
             self.legend.remove()
-            
+
         # 如果有曲线，则创建新图例
         if self.lines:
             # 创建带有当前线宽和透明度的图例
@@ -1486,48 +1486,48 @@ class SpectralCanvas(FigureCanvas):
                 shadow=True,
                 fontsize=10
             )
-            
+
             # 提高图例的z-order以确保它显示在其他元素之上
             if self.legend:
                 self.legend.set_zorder(100)
-                
+
     def add_analysis_markers(self, markers_dict):
         """在图表上添加分析标记
-        
+
         Args:
             markers_dict: 标记点字典 {名称: [(x1, y1), (x2, y2), ...]}
         """
         # 标记颜色和标记类型
         marker_styles = ['o', 's', '^', 'v', 'D', '*']
-        
+
         for line_idx, markers in markers_dict.items():
             # 确保索引在有效范围内
             if line_idx < len(self.lines):
                 line = self.lines[line_idx]
                 line_color = line.get_color()
-                
+
                 for i, (x, y, marker_type, text) in enumerate(markers):
                     # 选择标记样式
                     marker_style = marker_styles[i % len(marker_styles)]
-                    
+
                     # 绘制标记点
-                    self.axes.plot(x, y, marker=marker_style, markersize=8, 
+                    self.axes.plot(x, y, marker=marker_style, markersize=8,
                                   markerfacecolor='none', markeredgecolor=line_color,
                                   markeredgewidth=2)
-                    
+
                     # 添加标注文本
                     if text:
                         self.axes.annotate(text, xy=(x, y), xytext=(10, 10),
                                           textcoords='offset points', color=line_color,
                                           fontsize=9, fontweight='bold',
                                           arrowprops=dict(arrowstyle='->', color=line_color))
-        
+
         # 重绘画布
         self.draw()
 
     def highlight_curve_segment(self, line_idx, x_start, x_end, color='yellow', alpha=0.3):
         """高亮显示曲线的某一段区域
-        
+
         Args:
             line_idx: 曲线索引
             x_start: 开始的x坐标(波长)
@@ -1537,54 +1537,54 @@ class SpectralCanvas(FigureCanvas):
         """
         if line_idx < 0 or line_idx >= len(self.lines):
             return  # 索引无效
-            
+
         # 清除之前可能存在的高亮区域
         for collection in self.axes.collections[:]:
             if isinstance(collection, plt.matplotlib.collections.PolyCollection):
                 collection.remove()
-        
+
         line = self.lines[line_idx]
         if not line.get_visible():
             return  # 曲线不可见
-            
+
         x_data = line.get_xdata()
         y_data = line.get_ydata()
-        
+
         # 找到在指定波长范围内的点
         mask = (x_data >= x_start) & (x_data <= x_end)
         if np.any(mask):
             # 获取当前轴的y范围
             y_range = self.axes.get_ylim()
             y_min, y_max = y_range
-            
+
             # 绘制填充区域，边框采用较深的颜色
-            self.axes.axvspan(x_start, x_end, color=color, alpha=alpha, zorder=0, 
+            self.axes.axvspan(x_start, x_end, color=color, alpha=alpha, zorder=0,
                               edgecolor=color, linewidth=1.5)
-            
+
             # 确保曲线在高亮区域的上层
             line.set_zorder(10)
-            
+
             # 添加区域标记，使用更清晰的虚线样式
             self.axes.axvline(x_start, color='black', linestyle='--', alpha=0.6, linewidth=0.8)
             self.axes.axvline(x_end, color='black', linestyle='--', alpha=0.6, linewidth=0.8)
-            
+
             # 添加波长标签，使用更美观的标注
-            self.axes.annotate(f"{x_start:.0f}nm", (x_start, y_min + (y_max-y_min)*0.05), 
+            self.axes.annotate(f"{x_start:.0f}nm", (x_start, y_min + (y_max-y_min)*0.05),
                               ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.8,
                               bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7))
-            self.axes.annotate(f"{x_end:.0f}nm", (x_end, y_min + (y_max-y_min)*0.05), 
+            self.axes.annotate(f"{x_end:.0f}nm", (x_end, y_min + (y_max-y_min)*0.05),
                               ha='center', va='bottom', fontsize=8, rotation=90, alpha=0.8,
                               bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7))
-            
+
             # 居中添加区域名称标签
             region_name = self._get_region_name(x_start, x_end)
             if region_name:
                 self.axes.annotate(region_name, ((x_start + x_end)/2, y_max - (y_max-y_min)*0.05),
                                   ha='center', va='top', fontsize=9, fontweight='bold',
                                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.8))
-            
+
             self.draw()
-            
+
     def _get_region_name(self, x_start, x_end):
         """根据波长范围获取区域名称"""
         # 定义常见的光谱区域
@@ -1596,67 +1596,67 @@ class SpectralCanvas(FigureCanvas):
             (620, 750, "红光"),
             (750, 1050, "近红外")
         ]
-        
+
         # 查找最匹配的区域
         for wl_min, wl_max, name in regions:
             # 如果起始和结束波长接近某个预定义区域，则返回该区域名称
             if abs(wl_min - x_start) < 10 and abs(wl_max - x_end) < 10:
                 return name
         return ""
-    
+
     def add_wavelength_markers(self, wavelengths):
         """在所有曲线上添加特定波长的标记
-        
+
         Args:
             wavelengths: 要标记的波长列表
         """
         if not self.lines or not wavelengths:
             return
-            
+
         # 保存所有添加的标记以便稍后清除
         self.wavelength_markers = []
         self.wavelength_annotations = []
         self.wavelength_vlines = []
         self.wavelength_labels = []
-        
+
         # 获取y轴范围
         y_range = self.axes.get_ylim()
         y_min, y_max = y_range
         y_height = y_max - y_min
-        
+
         # 获取x轴范围，用于确定标签的合理位置
         x_min, x_max = self.axes.get_xlim()
         x_width = x_max - x_min
-        
+
         # 计算合适的标记大小和线宽 - 根据当前视图范围动态调整
         markersize = max(6, min(10, 800 / len(self.lines) / len(wavelengths) * (10 / x_width * 500)))
-        
+
         # 创建颜色映射，每个波长一个独特的颜色
         cmap = plt.cm.tab10
         wl_colors = [cmap(i % 10) for i in range(len(wavelengths))]
-        
+
         # Step 1: 为每个波长添加垂直参考线和标注
         for i, wl in enumerate(wavelengths):
             # 如果波长不在当前视图范围内或接近边缘，调整标签位置
             in_view = x_min <= wl <= x_max
             near_left = x_min <= wl < x_min + x_width * 0.1
             near_right = x_max - x_width * 0.1 < wl <= x_max
-            
+
             # 设置当前波长的基本颜色
             line_color = wl_colors[i]
-            
+
             # 添加垂直参考线 - 使用更加明显的虚线样式，作为辅助线
             vline = self.axes.axvline(
-                x=wl, 
-                color=line_color, 
-                linestyle='--', 
+                x=wl,
+                color=line_color,
+                linestyle='--',
                 linewidth=1.8,  # 更粗的线宽
                 alpha=0.85,     # 更高的不透明度
                 zorder=5,       # 更高的z轴顺序确保可见性
                 # 移除label参数，使垂直线不出现在图例中
             )
             self.wavelength_vlines.append(vline)
-            
+
             # 动态计算标签位置，确保在缩放时仍然可见
             if in_view:
                 # 标签水平位置调整
@@ -1672,7 +1672,7 @@ class SpectralCanvas(FigureCanvas):
                     # 中间位置居中对齐
                     h_adjust = 0
                     ha_top = 'center'
-                
+
                 # 在顶部添加波长标签 - 使用transform='figure'确保在缩放时标签位置固定
                 top_label = self.axes.annotate(
                     f"λ={wl:.1f}nm",
@@ -1694,14 +1694,14 @@ class SpectralCanvas(FigureCanvas):
                     zorder=40
                 )
                 self.wavelength_labels.append(top_label)
-        
+
         # Step 2: 为每条曲线添加数据点和标签，只有当波长在视图范围内时才添加
         for line_idx, line in enumerate(self.lines):
             x_data = line.get_xdata()
             y_data = line.get_ydata()
             line_color = line.get_color()
             line_label = line.get_label()
-            
+
             # 为每个波长找到并标记对应点
             for i, target_wl in enumerate(wavelengths):
                 # 只有当波长在当前视图范围内时才添加标记
@@ -1710,12 +1710,12 @@ class SpectralCanvas(FigureCanvas):
                     idx = np.abs(x_data - target_wl).argmin()
                     actual_wl = x_data[idx]
                     value = y_data[idx]
-                    
+
                     # 仅当找到的点与目标波长接近时添加标记
                     if abs(actual_wl - target_wl) <= 10:  # 允许10nm以内的误差
                         # 使用对应波长的颜色
                         wl_color = wl_colors[i]
-                        
+
                         # 添加标记点 - 使用更明显的标记样式
                         marker = self.axes.plot(
                             [actual_wl], [value],
@@ -1727,26 +1727,26 @@ class SpectralCanvas(FigureCanvas):
                             zorder=20               # 更高的z轴顺序
                         )[0]
                         self.wavelength_markers.append(marker)
-                        
+
                         # 计算标签位置和连接线样式
                         # 根据曲线和波长索引计算唯一的偏移位置
                         h_index = (line_idx + i) % 3 - 1  # -1, 0, 1
                         v_index = (line_idx % 4)  # 0, 1, 2, 3
-                        
+
                         # 水平和垂直偏移量
                         h_offset = 20 * h_index  # -20, 0, 20 像素
                         # 非线性增长的垂直偏移确保更好的分散
                         v_offset = 20 + v_index * 15  # 20, 35, 50, 65 像素
-                        
+
                         # 靠近边缘时进行调整
                         if near_left and h_offset < 0:
                             h_offset = abs(h_offset)
                         elif near_right and h_offset > 0:
                             h_offset = -abs(h_offset)
-                        
+
                         # 连接线弯曲度，避免交叉
                         rad = 0.2 * h_index
-                        
+
                         # 添加数据标签 - 仅显示数值，使用带箭头的连接线(只保留1位小数)
                         annotation = self.axes.annotate(
                             f"{value:.1f}",
@@ -1764,7 +1764,7 @@ class SpectralCanvas(FigureCanvas):
                                 linewidth=1.5
                             ),
                             arrowprops=dict(
-                                arrowstyle='->', 
+                                arrowstyle='->',
                                 color=line_color,
                                 connectionstyle=f"arc3,rad={rad}",
                                 linewidth=1.5,
@@ -1773,138 +1773,141 @@ class SpectralCanvas(FigureCanvas):
                             zorder=30
                         )
                         self.wavelength_annotations.append(annotation)
-        
+
         # 重绘画布
         self.draw()
-    
+
     def clear_wavelength_markers(self):
         """清除所有波长标记点"""
         if hasattr(self, 'wavelength_markers'):
             for marker in self.wavelength_markers:
                 marker.remove()
             self.wavelength_markers = []
-            
+
         if hasattr(self, 'wavelength_annotations'):
             for annotation in self.wavelength_annotations:
                 annotation.remove()
             self.wavelength_annotations = []
-            
+
         if hasattr(self, 'wavelength_vlines'):
             for vline in self.wavelength_vlines:
                 vline.remove()
             self.wavelength_vlines = []
-            
+
         if hasattr(self, 'wavelength_labels'):
             for label in self.wavelength_labels:
                 label.remove()
             self.wavelength_labels = []
-        
+
         self.draw()
 
     def mousePressEvent(self, event):
         """处理鼠标按下事件"""
-        if event.button() == Qt.MiddleButton:
+        if event.button() == Qt.MouseButton.MiddleButton:
             # 启用拖动模式
             self._pan_enabled = True
-            self._pan_start_x = event.x()
-            self._pan_start_y = event.y()
+            pos = event.position()
+            self._pan_start_x = pos.x()
+            self._pan_start_y = pos.y()
             self._pan_start_xlim = self.axes.get_xlim()
             self._pan_start_ylim = self.axes.get_ylim()
-            self.setCursor(Qt.ClosedHandCursor)  # 修改鼠标指针为抓取手形
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)  # 修改鼠标指针为抓取手形
             event.accept()
         else:
             super().mousePressEvent(event)
-            
+
     def mouseReleaseEvent(self, event):
         """处理鼠标释放事件"""
-        if event.button() == Qt.MiddleButton and self._pan_enabled:
+        if event.button() == Qt.MouseButton.MiddleButton and self._pan_enabled:
             # 禁用拖动模式
             self._pan_enabled = False
-            self.setCursor(Qt.ArrowCursor)  # 恢复默认指针
+            self.setCursor(Qt.CursorShape.ArrowCursor)  # 恢复默认指针
             event.accept()
         else:
             super().mouseReleaseEvent(event)
-            
+
     def mouseMoveEvent(self, event):
         """处理鼠标移动事件"""
         if self._pan_enabled:
             # 计算鼠标移动的距离
-            dx = event.x() - self._pan_start_x
-            dy = event.y() - self._pan_start_y
-            
+            pos = event.position()
+            dx = pos.x() - self._pan_start_x
+            dy = pos.y() - self._pan_start_y
+
             # 获取当前视图范围
             xmin, xmax = self.axes.get_xlim()
             ymin, ymax = self.axes.get_ylim()
-            
+
             # 计算数据坐标的移动距离
             width, height = self.get_width_height()
             dx_data = (xmax - xmin) * dx / width
             dy_data = (ymax - ymin) * dy / height
-            
+
             # 更新视图范围
             self.axes.set_xlim(xmin - dx_data, xmax - dx_data)
             self.axes.set_ylim(ymin + dy_data, ymax + dy_data)
-            
+
             # 更新起始位置
-            self._pan_start_x = event.x()
-            self._pan_start_y = event.y()
-            
+            pos = event.position()
+            self._pan_start_x = pos.x()
+            self._pan_start_y = pos.y()
+
             # 更新波长标记
             wavelengths = []
             if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
                 for vline in self.wavelength_vlines:
                     wavelengths.append(vline.get_xdata()[0])
-            
+
             if wavelengths:
                 self.clear_wavelength_markers()
                 self.add_wavelength_markers(wavelengths)
-            
+
             # 重绘画布
             self.draw_idle()
         else:
             # 处理鼠标悬停事件
             # 将Qt坐标转换为matplotlib坐标
-            pos = event.pos()
+            pos = event.position().toPoint()
             width, height = self.get_width_height()
             x_pos = pos.x() / width
             y_pos = (height - pos.y()) / height  # 注意Y轴方向
-            
+
             # 获取当前视图范围
             xmin, xmax = self.axes.get_xlim()
             ymin, ymax = self.axes.get_ylim()
-            
+
             # 计算鼠标所指向的数据点坐标
             x = xmin + (xmax - xmin) * x_pos
             y = ymin + (ymax - ymin) * y_pos
-            
+
             closest_line = None
             min_distance = float('inf')
-            
+
             # 找到最近的线条
             for line in self.lines:
                 if not line.get_visible():
                     continue
-                    
+
                 # 获取线条数据
                 xdata = line.get_xdata()
                 ydata = line.get_ydata()
-                
+
                 # 找到最近的点
                 distances = []
                 for xi, yi in zip(xdata, ydata):
                     # 计算欧几里德距离
                     dist = np.sqrt((x - xi)**2 + (y - yi)**2)
                     distances.append(dist)
-                
+
                 if distances:
                     min_dist = min(distances)
                     if min_dist < min_distance:
                         min_distance = min_dist
                         closest_line = line
-            
+
             # 设置阈值，确定是否足够近
             threshold = (xmax - xmin) * 0.02
-            
+
             if min_distance < threshold:
                 self.update_highlight(closest_line)
             else:
@@ -1913,97 +1916,106 @@ class SpectralCanvas(FigureCanvas):
 
 class SpectralViewer(QMainWindow):
     """反射率光谱数据可视化应用程序"""
-    
+
     def __init__(self):
         super().__init__()
-        
+
+        # 显式设置窗口类型，确保有标题栏和按钮
+        self.setWindowFlags(Qt.WindowType.Window)
+
         self.spectra_data = {}  # 用于存储所有已加载的光谱数据
         self.base_folder = ""   # 基础文件夹路径
         self.grid_visible = True  # 添加网格状态跟踪
         self.reference_curve = None  # 存储标准曲线的名称
-        
+
         self.initUI()
-        
+
     def initUI(self):
         """初始化用户界面"""
         self.setWindowTitle('光谱分析工具')
-        
-        # 设置主窗口大小，但先不设置位置
-        self.resize(1920, 1080)
-        
+
+        # 不设置任何窗口标志，使用默认标志
+        # 在PyQt6中，QMainWindow默认就有标题栏、最小化、最大化和关闭按钮
+
+        # 设置主窗口大小为更合理的尺寸
+        self.resize(1280, 800)
+
+        # 设置窗口状态为正常状态，确保显示标题栏
+        self.setWindowState(Qt.WindowState.WindowNoState)
+
         # 居中显示窗口
         self.center_window()
-        
+
         # 设置中文字体
         app_font = QFont("Microsoft YaHei", 9)
         QApplication.setFont(app_font)
-        
+
         # 创建主窗口部件和布局
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
-        
+
         # 创建左侧控制面板
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
-        
+
         # 数据加载区域
         load_group = QGroupBox("数据加载")
         load_layout = QVBoxLayout()
-        
+
         # 浏览按钮
         self.load_btn = QPushButton('加载数据文件夹')
         self.load_btn.clicked.connect(self.load_data_folder)
         load_layout.addWidget(self.load_btn)
-        
+
         # 添加加载单个CSV文件的按钮
         self.load_csv_btn = QPushButton('加载单个CSV文件')
         self.load_csv_btn.clicked.connect(self.load_csv_file)
         load_layout.addWidget(self.load_csv_btn)
-        
+
         # 添加刷新按钮
         self.reload_btn = QPushButton('刷新显示')
         self.reload_btn.clicked.connect(self.update_plot)
         self.reload_btn.setEnabled(False)
         load_layout.addWidget(self.reload_btn)
-        
+
         # 清空按钮
         self.clear_btn = QPushButton('清空所有数据')
         self.clear_btn.clicked.connect(self.clear_all_data)
         self.clear_btn.setEnabled(False)
         load_layout.addWidget(self.clear_btn)
-        
+
         # 添加分析差异按钮
         self.analyze_btn = QPushButton('分析差异')
         self.analyze_btn.clicked.connect(self.analyze_spectra)
         self.analyze_btn.setEnabled(False)
         load_layout.addWidget(self.analyze_btn)
-        
+
         # 数据文件列表（用于显示已加载的文件，支持右键菜单删除）
         self.file_list = QListWidget()
-        self.file_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_list.setToolTip("右键点击列表项可以删除文件")
         load_layout.addWidget(QLabel("已加载的数据文件 (右键可删除):"))
         load_layout.addWidget(self.file_list)
-        
+
         load_group.setLayout(load_layout)
         control_layout.addWidget(load_group)
-        
+
         # 绘图控制区域
         plot_control_group = QGroupBox("绘图控制")
         plot_control_layout = QVBoxLayout()
-        
+
         # 添加交互提示
         interaction_label = QLabel("交互提示：\n· 点击图例可显示/隐藏对应曲线\n· 鼠标移动到曲线上将高亮显示\n· 右键点击文件名可移除数据")
         plot_control_layout.addWidget(interaction_label)
-        
+
         # 添加其他控制选项
         self.grid_cb = QCheckBox("显示网格")
         self.grid_cb.setChecked(True)
         self.grid_cb.stateChanged.connect(self.on_grid_changed)
         plot_control_layout.addWidget(self.grid_cb)
-        
+
         # 添加波长范围设置
         range_layout = QGridLayout()
         range_layout.addWidget(QLabel("波长范围:"), 0, 0)
@@ -2017,13 +2029,13 @@ class SpectralViewer(QMainWindow):
         range_layout.addWidget(self.wl_max, 1, 3)
         self.wl_min.currentTextChanged.connect(self.update_plot)
         self.wl_max.currentTextChanged.connect(self.update_plot)
-        
+
         plot_control_layout.addLayout(range_layout)
-        
+
         # 添加波长标记功能
         wavelength_group = QGroupBox("波长标记")
         wavelength_layout = QVBoxLayout()
-        
+
         # 添加波长选择UI
         wavelength_input_layout = QHBoxLayout()
         wavelength_input_layout.addWidget(QLabel("输入波长:"))
@@ -2034,18 +2046,18 @@ class SpectralViewer(QMainWindow):
         add_btn.clicked.connect(self.add_wavelength)
         wavelength_input_layout.addWidget(add_btn)
         wavelength_layout.addLayout(wavelength_input_layout)
-        
+
         # 添加显示当前选择的波长列表
         wavelength_layout.addWidget(QLabel("当前选择的波长:"))
         self.wavelength_list = QListWidget()
         self.wavelength_list.setMaximumHeight(120)
-        self.wavelength_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.wavelength_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.wavelength_list.customContextMenuRequested.connect(self.show_wavelength_context_menu)
         wavelength_layout.addWidget(self.wavelength_list)
         # 添加默认波长
         for default_wl in [532, 671, 780, 1020]:
             self.wavelength_list.addItem(f"{default_wl:.1f}")
-        
+
         # 添加操作按钮
         btn_layout = QHBoxLayout()
         mark_btn = QPushButton("标记选中波长")
@@ -2055,93 +2067,107 @@ class SpectralViewer(QMainWindow):
         btn_layout.addWidget(mark_btn)
         btn_layout.addWidget(clear_btn)
         wavelength_layout.addLayout(btn_layout)
-        
+
         # 应用布局
         wavelength_group.setLayout(wavelength_layout)
         plot_control_layout.addWidget(wavelength_group)
-        
+
         plot_control_group.setLayout(plot_control_layout)
         control_layout.addWidget(plot_control_group)
-        
+
         # 添加伸缩空间
         control_layout.addStretch(1)
-        
+
         # 设置左侧面板的宽度
         control_panel.setMinimumWidth(300)
         control_panel.setMaximumWidth(400)
-        
+
         # 创建右侧图表区域
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
-        
+
         # 创建绘图画布
         self.canvas = SpectralCanvas(plot_panel)
         self.toolbar = NavigationToolbar(self.canvas, plot_panel)
-        
+
         # 连接导航工具栏的重置视图按钮
         self.toolbar.actions()[0].triggered.connect(self.canvas.reset_view)
-        
+
         plot_layout.addWidget(self.toolbar)
         plot_layout.addWidget(self.canvas)
-        
+
         # 创建分割器，允许调整两侧面板的大小
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(control_panel)
         splitter.addWidget(plot_panel)
         splitter.setSizes([300, 900])  # 设置初始大小
-        
+
         main_layout.addWidget(splitter)
-    
+
     def center_window(self):
-        """将窗口居中显示在屏幕上"""
-        try:
-            # 获取屏幕几何信息
-            screen = QApplication.primaryScreen()
-            screen_geometry = screen.availableGeometry()
-            
-            # 获取窗口几何信息
-            window_geometry = self.frameGeometry()
-            
-            # 计算居中位置
-            center_point = screen_geometry.center()
-            window_geometry.moveCenter(center_point)
-            
-            # 移动窗口到居中位置
-            self.move(window_geometry.topLeft())
-        except Exception:
-            # 兼容旧版本PyQt5
-            desktop = QApplication.desktop()
-            screen_rect = desktop.availableGeometry()
-            window_rect = self.frameGeometry()
-            window_rect.moveCenter(screen_rect.center())
-            self.move(window_rect.topLeft())
-    
+        """将窗口居中显示在屏幕上，并确保不超出屏幕范围"""
+        # 获取屏幕几何信息
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+
+        # 确保窗口尺寸不超过屏幕的80%
+        max_width = int(screen_geometry.width() * 0.8)
+        max_height = int(screen_geometry.height() * 0.8)
+
+        current_size = self.size()
+        if current_size.width() > max_width or current_size.height() > max_height:
+            self.resize(min(current_size.width(), max_width),
+                       min(current_size.height(), max_height))
+
+        # 获取窗口几何信息
+        window_geometry = self.frameGeometry()
+
+        # 计算居中位置
+        center_point = screen_geometry.center()
+        window_geometry.moveCenter(center_point)
+
+        # 移动窗口到居中位置
+        self.move(window_geometry.topLeft())
+
+        # 确保窗口完全在屏幕内
+        frame_geo = self.frameGeometry()
+        if not screen_geometry.contains(frame_geo):
+            # 如果窗口部分在屏幕外，调整位置
+            if frame_geo.right() > screen_geometry.right():
+                self.move(self.pos().x() - (frame_geo.right() - screen_geometry.right()), self.pos().y())
+            if frame_geo.bottom() > screen_geometry.bottom():
+                self.move(self.pos().x(), self.pos().y() - (frame_geo.bottom() - screen_geometry.bottom()))
+            if frame_geo.left() < screen_geometry.left():
+                self.move(screen_geometry.left(), self.pos().y())
+            if frame_geo.top() < screen_geometry.top():
+                self.move(self.pos().x(), screen_geometry.top())
+
     def show_file_context_menu(self, position):
         """显示文件列表的右键菜单"""
         # 获取选中的项目
         selected_items = self.file_list.selectedItems()
-        
+
         if not selected_items:
             return
-            
+
         # 创建右键菜单
         context_menu = QMenu(self)
-        
+
         # 添加删除动作
         remove_action = QAction("删除选中文件", self)
         remove_action.triggered.connect(self.remove_selected_files)
         context_menu.addAction(remove_action)
-        
+
         # 添加单条曲线分析选项
         if len(selected_items) == 1:
             analyze_single_action = QAction("分析单条曲线", self)
             analyze_single_action.triggered.connect(self.analyze_single_curve)
             context_menu.addAction(analyze_single_action)
-            
+
             # 添加设置/取消标准曲线选项
             selected_curve = selected_items[0].text()
             clean_name = selected_curve.replace(" [标准]", "")  # 移除可能存在的标记
-            
+
             if self.reference_curve == clean_name:
                 # 如果当前选中的曲线已经是标准曲线，则显示取消选项
                 reference_action = QAction("取消设为标准曲线", self)
@@ -2150,108 +2176,109 @@ class SpectralViewer(QMainWindow):
                 # 否则显示设置选项
                 reference_action = QAction("设为标准曲线", self)
                 reference_action.triggered.connect(lambda: self.set_reference_curve(clean_name))
-                
+
             context_menu.addAction(reference_action)
-        
+
         # 如果选中了多个项目，添加全部删除选项
         if len(selected_items) > 1:
             remove_all_selected_action = QAction(f"删除所有选中的 {len(selected_items)} 个文件", self)
             remove_all_selected_action.triggered.connect(self.remove_selected_files)
             context_menu.addAction(remove_all_selected_action)
-        
+
         # 显示菜单
         context_menu.exec_(self.file_list.mapToGlobal(position))
-    
+
     def remove_selected_files(self):
         """从列表和数据字典中移除选中的文件"""
         selected_items = self.file_list.selectedItems()
-        
+
         if not selected_items:
             return
-            
+
         # 确认是否删除
         message = f"确定要移除选中的 {len(selected_items)} 个文件吗？"
-        reply = QMessageBox.question(self, '确认删除', message, 
+        reply = QMessageBox.question(self, '确认删除', message,
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        
+
         if reply == QMessageBox.No:
             return
-            
+
         # 移除选中的文件
         for item in selected_items:
             label = item.text()
             clean_label = label.replace(" [标准]", "")
-            
+
             # 检查是否是标准曲线
             if self.reference_curve == clean_label:
                 self.reference_curve = None  # 移除标准曲线引用
-                
+
             if clean_label in self.spectra_data:
                 del self.spectra_data[clean_label]
             elif label in self.spectra_data:
                 del self.spectra_data[label]
-                
+
             # 从列表中移除项目
             row = self.file_list.row(item)
             self.file_list.takeItem(row)
-        
+
         # 禁用清空按钮（如果没有数据）
         if self.file_list.count() == 0:
             self.clear_btn.setEnabled(False)
             self.reload_btn.setEnabled(False)
             self.analyze_btn.setEnabled(False)  # 禁用分析按钮
-            
+
         # 更新图表
         self.update_plot()
-    
+
     def clear_all_data(self):
         """清空所有加载的数据"""
         if not self.spectra_data:
             return
-            
+
         # 确认是否清空
-        reply = QMessageBox.question(self, '确认清空', '确定要清空所有已加载的数据吗？', 
+        reply = QMessageBox.question(self, '确认清空', '确定要清空所有已加载的数据吗？',
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        
+
         if reply == QMessageBox.No:
             return
-            
+
         # 清空数据
         self.spectra_data.clear()
         self.file_list.clear()
         self.canvas.clear_plot()
-        
+
         # 清空标准曲线设置
         self.reference_curve = None
-        
+
         # 禁用按钮
         self.clear_btn.setEnabled(False)
         self.reload_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)  # 禁用分析按钮
-        
+
         QMessageBox.information(self, "清空完成", "已清空所有数据。")
-        
+
     def load_data_folder(self):
         """加载数据文件夹并处理所有CSV文件"""
-        folder_path = QFileDialog.getExistingDirectory(self, "选择数据文件夹", 
+        folder_path = QFileDialog.getExistingDirectory(self, "选择数据文件夹",
                                                       QDir.currentPath())
-        
+
         if not folder_path:
             return
-            
+
         # 清空现有数据
-        reply = QMessageBox.Yes
+        reply = QMessageBox.StandardButton.Yes
         if self.file_list.count() > 0:
-            reply = QMessageBox.question(self, '确认操作', 
-                                       '是否先清空当前已加载的数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据', 
-                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-            
-        if reply == QMessageBox.Yes:
+            reply = QMessageBox.question(self, '确认操作',
+                                       '是否先清空当前已加载的数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据',
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                       QMessageBox.StandardButton.Yes)
+
+        if reply == QMessageBox.StandardButton.Yes:
             self.file_list.clear()
             self.spectra_data.clear()
-            
+
         self.base_folder = folder_path
-        
+
         # 遍历文件夹中的所有子文件夹
         files_loaded = 0
         for root, dirs, files in os.walk(folder_path):
@@ -2260,17 +2287,17 @@ class SpectralViewer(QMainWindow):
                     file_path = os.path.join(root, file)
                     try:
                         wavelength, reflectance = self.read_spectral_data(file_path)
-                        
+
                         # 获取相对路径并处理为显示标签
                         rel_path = os.path.relpath(file_path, folder_path)
                         # 移除rawdata前缀，如果存在
                         if rel_path.startswith('rawdata'):
                             rel_path = rel_path.replace('rawdata/', '', 1)
                             rel_path = rel_path.replace('rawdata\\', '', 1)
-                        
+
                         # 分解路径获取子文件夹名和文件名
                         path_parts = rel_path.split(os.path.sep)
-                        
+
                         if len(path_parts) > 1:
                             # 有子文件夹的情况
                             subfolder = path_parts[0]
@@ -2279,45 +2306,45 @@ class SpectralViewer(QMainWindow):
                         else:
                             # 直接在根目录下的文件
                             display_label = rel_path
-                        
+
                         # 存储数据
                         self.spectra_data[display_label] = (wavelength, reflectance)
-                        
+
                         # 添加到列表显示
                         self.file_list.addItem(display_label)
                         files_loaded += 1
                     except Exception as e:
                         print(f"无法读取文件 {file_path}: {e}")
-        
+
         # 启用按钮
         if files_loaded > 0:
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
             self.analyze_btn.setEnabled(True)  # 启用分析按钮
-            
-            # 显示加载的文件数量            
-            QMessageBox.information(self, "数据加载完成", 
+
+            # 显示加载的文件数量
+            QMessageBox.information(self, "数据加载完成",
                                   f"已加载 {files_loaded} 个光谱数据文件，并在图表中显示。")
-            
+
             # 自动更新图表，显示所有数据
             self.update_plot()
         else:
-            QMessageBox.warning(self, "未找到数据", 
+            QMessageBox.warning(self, "未找到数据",
                               f"在所选文件夹中未找到有效的CSV数据文件。")
-    
+
     def read_spectral_data(self, file_path):
         """读取光谱数据文件并提取波长和反射率数据
-        
+
         Args:
             file_path: CSV文件路径
-            
+
         Returns:
             tuple: (波长数组, 反射率数组)
         """
         # 尝试不同的编码方式读取文件
         encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin1']
         lines = None
-        
+
         for encoding in encodings:
             try:
                 with open(file_path, 'r', encoding=encoding) as f:
@@ -2325,22 +2352,22 @@ class SpectralViewer(QMainWindow):
                 break  # 如果成功读取，则跳出循环
             except UnicodeDecodeError:
                 continue
-                
+
         if lines is None:
             raise ValueError(f"无法以支持的编码格式读取文件: {file_path}")
-        
+
         # 检查文件是否为简单CSV格式（第一列Wavelength，第二列Reflectance）
         is_simple_format = True
         for line in lines[:10]:  # 检查前10行
             if "---------------BEGIN--------------------" in line or "Wavelength(nm)" in line:
                 is_simple_format = False
                 break
-                
+
         # 如果是简单格式，直接解析每一行
         if is_simple_format:
             wavelength = []
             reflectance = []
-            
+
             for line in lines:
                 if ',' in line:
                     parts = line.strip().split(',')
@@ -2350,40 +2377,40 @@ class SpectralViewer(QMainWindow):
                             # 处理反射率值，可能有空格
                             ref_str = parts[1].strip()
                             ref = float(ref_str) if ref_str.lower() != 'nan' else np.nan
-                            
+
                             wavelength.append(wl)
                             reflectance.append(ref)
                         except (ValueError, IndexError):
                             continue
-            
+
             if len(wavelength) > 0:
                 return np.array(wavelength), np.array(reflectance)
-        
+
         # 如果不是简单格式或者简单格式解析失败，使用原有方法解析
-        
+
         # 查找数据开始的行
         start_line = 0
         for i, line in enumerate(lines):
             if "---------------BEGIN--------------------" in line:
                 start_line = i + 2  # 数据从BEGIN行的后两行开始
                 break
-        
+
         if start_line == 0:
             # 如果没有找到BEGIN标记，尝试查找标题行
             for i, line in enumerate(lines):
                 if "Wavelength(nm)" in line and "Reflectance(%)" in line:
                     start_line = i + 1
                     break
-        
+
         if start_line == 0:
             # 如果仍然找不到数据起始位置，尝试将第一行作为数据起始点
             start_line = 0
-            
+
         # 从确定的行开始解析数据
         data_lines = lines[start_line:]
         wavelength = []
         reflectance = []
-        
+
         for line in data_lines:
             if ',' in line:
                 parts = line.strip().split(',')
@@ -2393,25 +2420,25 @@ class SpectralViewer(QMainWindow):
                         # 处理反射率值，可能是NaN
                         ref_str = parts[1].strip()
                         ref = float(ref_str) if ref_str.lower() != 'nan' else np.nan
-                        
+
                         wavelength.append(wl)
                         reflectance.append(ref)
                     except (ValueError, IndexError):
                         continue
-        
+
         return np.array(wavelength), np.array(reflectance)
-    
+
     def update_plot(self):
         """更新绘图，显示所有光谱数据"""
         if not self.spectra_data:
             self.canvas.clear_plot()
             return
-        
+
         # 获取波长范围
         try:
             wl_min = float(self.wl_min.currentText())
             wl_max = float(self.wl_max.currentText())
-            
+
             # 筛选波长范围内的数据
             filtered_data = {}
             for label, (wavelength, reflectance) in self.spectra_data.items():
@@ -2419,41 +2446,41 @@ class SpectralViewer(QMainWindow):
                 mask = (wavelength >= wl_min) & (wavelength <= wl_max)
                 if np.any(mask):  # 确保有数据点
                     filtered_data[label] = (wavelength[mask], reflectance[mask])
-            
+
             # 绘制所有光谱数据
             if filtered_data:
                 # 传递标准曲线信息
                 reference_curve = None
                 if self.reference_curve is not None:
                     reference_curve = self.reference_curve.replace(" [标准]", "")
-                    
+
                 self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
-                
+
                 # 如果有波长标记，重新添加
                 if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
                     wavelengths = []
                     for i in range(self.wavelength_list.count()):
                         wavelengths.append(float(self.wavelength_list.item(i).text()))
-                    
+
                     if wavelengths:
                         self.canvas.add_wavelength_markers(wavelengths)
         except Exception as e:
             QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
-    
+
     def on_grid_changed(self, state):
         """处理网格显示状态改变"""
-        is_checked = state == Qt.Checked
-        
+        is_checked = state == Qt.CheckState.Checked
+
         # 更新网格状态并立即应用
         self.canvas._show_grid = is_checked
-        
+
         # 强制清除当前网格
         self.canvas.axes.grid(False)
-        
+
         # 如果需要显示网格，则重新绘制网格
         if is_checked:
             self.canvas.axes.grid(True, linestyle='--', alpha=0.7)
-        
+
         # 重绘画布
         self.canvas.draw()
 
@@ -2462,43 +2489,43 @@ class SpectralViewer(QMainWindow):
         if len(self.spectra_data) < 2:
             QMessageBox.warning(self, "无法分析", "需要至少2个光谱数据才能进行差异分析。")
             return
-        
+
         try:
             # 获取当前波长范围
             wl_min = float(self.wl_min.currentText())
             wl_max = float(self.wl_max.currentText())
-            
+
             # 筛选当前显示的数据
             filtered_data = {}
             for label, (wavelength, reflectance) in self.spectra_data.items():
                 mask = (wavelength >= wl_min) & (wavelength <= wl_max)
                 if np.any(mask):
                     filtered_data[label] = (wavelength[mask], reflectance[mask])
-            
+
             if not filtered_data or len(filtered_data) < 2:
                 QMessageBox.warning(self, "无法分析", "在当前波长范围内至少需要2个有效的光谱数据才能进行差异分析。")
                 return
-            
+
             # 1. 进行统计分析并生成报告
             result_html, markers_dict = self.perform_spectral_analysis(filtered_data)
-            
+
             # 2. 在图表上标记关键点
             self.canvas.add_analysis_markers(markers_dict)
-            
+
             # 3. 显示分析结果对话框
             result_dialog = AnalysisResultDialog(self)
             result_dialog.set_result_text(result_html)
             result_dialog.exec_()
-            
+
         except Exception as e:
             QMessageBox.warning(self, "分析错误", f"进行差异分析时出错: {str(e)}")
-    
+
     def perform_spectral_analysis(self, spectra_dict):
         """执行光谱数据的统计分析
-        
+
         Args:
             spectra_dict: 包含光谱数据的字典 {显示标签: (波长数组, 反射率数组)}
-            
+
         Returns:
             tuple: (HTML格式的分析报告文本, 标记点字典)
         """
@@ -2506,68 +2533,68 @@ class SpectralViewer(QMainWindow):
         html_result = "<h2>光谱差异分析报告</h2>"
         html_result += f"<p>分析时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</p>"
         html_result += f"<p>数据样本数: {len(spectra_dict)} 个光谱曲线</p>"
-        
+
         # 标记点字典 - 用于在图上标记关键点
         markers_dict = {}
-        
+
         # 1. 基本统计分析
         html_result += "<h3>1. 基本统计特征</h3>"
         stats_table = "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
         stats_table += "<tr><th>样本名称</th><th>最大反射率(%)</th><th>最小反射率(%)</th><th>平均反射率(%)</th><th>标准差</th></tr>"
-        
+
         # 计算各曲线的最大值、最小值、均值等统计量
         max_values = []
         min_values = []
         mean_values = []
         std_values = []
         labels = []
-        
+
         for i, (label, (wavelength, reflectance)) in enumerate(spectra_dict.items()):
             # 过滤掉NaN值
             mask = ~np.isnan(reflectance)
             valid_wavelength = wavelength[mask]
             valid_reflectance = reflectance[mask]
-            
+
             if len(valid_reflectance) == 0:
                 continue
-                
+
             # 计算统计量
             max_val = np.max(valid_reflectance)
             min_val = np.min(valid_reflectance)
             mean_val = np.mean(valid_reflectance)
             std_val = np.std(valid_reflectance)
-            
+
             # 保存结果
             max_values.append(max_val)
             min_values.append(min_val)
             mean_values.append(mean_val)
             std_values.append(std_val)
             labels.append(label)
-            
+
             # 找到最大值和最小值对应的波长
             max_idx = np.argmax(valid_reflectance)
             min_idx = np.argmin(valid_reflectance)
             max_wl = valid_wavelength[max_idx]
             min_wl = valid_wavelength[min_idx]
-            
+
             # 添加标记点
             markers_dict[i] = [
                 (max_wl, max_val, 'max', f"最大值: {max_val:.2f}%"),
                 (min_wl, min_val, 'min', f"最小值: {min_val:.2f}%")
             ]
-            
+
             # 添加到表格
             stats_table += f"<tr><td>{label}</td><td>{max_val:.2f}% (波长={max_wl:.0f}nm)</td>"
             stats_table += f"<td>{min_val:.2f}% (波长={min_wl:.0f}nm)</td>"
             stats_table += f"<td>{mean_val:.2f}%</td><td>{std_val:.2f}</td></tr>"
-        
+
         stats_table += "</table>"
         html_result += stats_table
-        
+
         # 添加区域分析部分
         html_result += "<h3>1.1 区域分析</h3>"
         html_result += "<p>各光谱曲线在不同波长区域的反射率特征：</p>"
-        
+
         # 定义常见的光谱区域
         regions = [
             (350, 450, "紫外-蓝光"),
@@ -2577,7 +2604,7 @@ class SpectralViewer(QMainWindow):
             (620, 750, "红光"),
             (750, 1050, "近红外")
         ]
-        
+
         # 定义马卡龙色系映射，对应各个光谱区域的真实颜色
         region_colors = {
             "紫外-蓝光": "#9370DB",  # 紫罗兰色
@@ -2587,10 +2614,10 @@ class SpectralViewer(QMainWindow):
             "红光": "#FF6347",      # 番茄红
             "近红外": "#F08080"     # 浅珊瑚色
         }
-        
+
         # 创建不同色彩方案
         colors = plt.cm.tab10(np.linspace(0, 1, len(spectra_dict)))
-        
+
         # 创建单张带有区域划分的图表
         fig = Figure(figsize=(16, 10), dpi=150)
         ax = fig.add_subplot(111)
@@ -2598,24 +2625,24 @@ class SpectralViewer(QMainWindow):
         ax.set_ylabel('反射率 (%)', fontsize=12)
         ax.set_title('区域分析', fontsize=14, fontweight='bold')
         ax.grid(True, linestyle='--', alpha=0.7)
-        
+
         # 获取全局波长范围
         global_min_wl = float('inf')
         global_max_wl = float('-inf')
         global_min_refl = float('inf')
         global_max_refl = float('-inf')
-        
+
         for label, (wavelength, reflectance) in spectra_dict.items():
             mask = ~np.isnan(reflectance)
             valid_wavelength = wavelength[mask]
             valid_reflectance = reflectance[mask]
-            
+
             if len(valid_wavelength) > 0:
                 global_min_wl = min(global_min_wl, np.min(valid_wavelength))
                 global_max_wl = max(global_max_wl, np.max(valid_wavelength))
                 global_min_refl = min(global_min_refl, np.min(valid_reflectance))
                 global_max_refl = max(global_max_refl, np.max(valid_reflectance))
-        
+
         # 为每个区域添加背景色
         for i, (wl_min, wl_max, region_name) in enumerate(regions):
             # 检查区域是否在全局波长范围内
@@ -2623,35 +2650,35 @@ class SpectralViewer(QMainWindow):
                 # 调整区域边界以适应全局范围
                 effective_wl_min = max(wl_min, global_min_wl)
                 effective_wl_max = min(wl_max, global_max_wl)
-                
+
                 # 添加区域背景
                 region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
                 ax.axvspan(effective_wl_min, effective_wl_max, alpha=0.25, color=region_color)
-                
+
                 # 添加区域标签
                 ax.text((effective_wl_min + effective_wl_max) / 2, ax.get_ylim()[1] * 0.95,
                        region_name, ha='center', fontsize=8,
-                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color, 
+                       bbox=dict(facecolor='white', alpha=0.8, edgecolor=region_color,
                                 boxstyle='round,pad=0.2', linewidth=1))
-        
+
         # 收集每个区域的分析数据
         region_analysis_data = []
         valid_region_names = []
-        
+
         # 为每个曲线在每个区域添加分析
         for i, (label, (wavelength, reflectance)) in enumerate(spectra_dict.items()):
             # 过滤NaN值
             mask = ~np.isnan(reflectance)
             valid_wavelength = wavelength[mask]
             valid_reflectance = reflectance[mask]
-            
+
             if len(valid_reflectance) == 0:
                 continue
-                
+
             # 绘制曲线
-            line, = ax.plot(valid_wavelength, valid_reflectance, '-', color=colors[i % len(colors)], 
+            line, = ax.plot(valid_wavelength, valid_reflectance, '-', color=colors[i % len(colors)],
                           label=label, linewidth=2.0)
-            
+
             # 对每个区域进行分析
             for wl_min, wl_max, region_name in regions:
                 # 获取特定区域的数据
@@ -2659,11 +2686,11 @@ class SpectralViewer(QMainWindow):
                 if np.any(region_mask) and np.sum(region_mask) >= 3:  # 至少需要3个点
                     region_wl = valid_wavelength[region_mask]
                     region_refl = valid_reflectance[region_mask]
-                    
+
                     # 计算区域统计量
                     mean_val = np.mean(region_refl)
                     std_val = np.std(region_refl)
-                    
+
                     # 查找最大值和最小值及其对应波长
                     max_idx = np.argmax(region_refl)
                     min_idx = np.argmin(region_refl)
@@ -2671,16 +2698,16 @@ class SpectralViewer(QMainWindow):
                     min_val = region_refl[min_idx]
                     max_wl = region_wl[max_idx]
                     min_wl = region_wl[min_idx]
-                    
+
                     # 标记最大值和最小值
                     ax.plot(max_wl, max_val, 'o', color=colors[i % len(colors)], markersize=8, markeredgewidth=1.5, markeredgecolor='white')
-                    
+
                     # 只给每个区域中最大值最高的两条曲线添加标签，避免过多标签重叠
                     region_max_values = [d['max'] for d in region_analysis_data if d.get('region_name') == region_name]
                     if region_max_values:  # 确保列表不为空
                         percentile_value = np.percentile(region_max_values, 75) if len(region_max_values) >= 4 else float('-inf')
                         if len(region_max_values) < 3 or max_val > percentile_value:
-                            ax.annotate(f"{label}\n最大: {max_val:.1f}%\n({max_wl:.0f}nm)", 
+                            ax.annotate(f"{label}\n最大: {max_val:.1f}%\n({max_wl:.0f}nm)",
                                       (max_wl, max_val), xytext=(10, 10),
                                       textcoords='offset points', fontsize=9,
                                       color=colors[i % len(colors)], fontweight='bold',
@@ -2688,16 +2715,16 @@ class SpectralViewer(QMainWindow):
                                       arrowprops=dict(arrowstyle='->', color=colors[i % len(colors)], lw=1.5))
                     else:
                         # 如果是该区域的第一条曲线，添加标签
-                        ax.annotate(f"{label}\n最大: {max_val:.1f}%\n({max_wl:.0f}nm)", 
+                        ax.annotate(f"{label}\n最大: {max_val:.1f}%\n({max_wl:.0f}nm)",
                                    (max_wl, max_val), xytext=(10, 10),
                                    textcoords='offset points', fontsize=9,
                                    color=colors[i % len(colors)], fontweight='bold',
                                    bbox=dict(facecolor='white', alpha=0.7, edgecolor=colors[i % len(colors)], pad=2),
                                    arrowprops=dict(arrowstyle='->', color=colors[i % len(colors)], lw=1.5))
-                    
+
                     # 标记最小值 (但标签较小，以减少视觉混乱)
                     ax.plot(min_wl, min_val, 's', color=colors[i % len(colors)], markersize=8, markeredgewidth=1.5, markeredgecolor='white')
-                    
+
                     # 存储区域分析数据
                     region_analysis_data.append({
                         'region_name': region_name,
@@ -2714,11 +2741,11 @@ class SpectralViewer(QMainWindow):
                         'region_wl': region_wl,
                         'region_refl': region_refl
                     })
-                    
+
                     # 记录有效的区域名称
                     if region_name not in valid_region_names:
                         valid_region_names.append(region_name)
-                    
+
                     # 添加标记点到主图
                     if i in markers_dict:
                         markers_dict[i].append(
@@ -2728,7 +2755,7 @@ class SpectralViewer(QMainWindow):
                         markers_dict[i] = [
                             (max_wl, max_val, 'region_max', f"{region_name}最大值: {max_val:.2f}%")
                         ]
-        
+
         # 设置图例
         if len(spectra_dict) > 10:
             ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='medium')
@@ -2736,16 +2763,16 @@ class SpectralViewer(QMainWindow):
         else:
             ax.legend(loc='best', fontsize='large')
             fig.tight_layout()
-        
+
         # 设置字体大小
         ax.tick_params(axis='both', which='major', labelsize=11)
-        
+
         # 将图表嵌入到HTML中
         buf = io.BytesIO()
         fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         buf.seek(0)
         img_str = base64.b64encode(buf.read()).decode('utf-8')
-        
+
         # 添加可点击放大的图片
         html_result += f'''
         <div style="text-align: center;">
@@ -2755,42 +2782,42 @@ class SpectralViewer(QMainWindow):
             <p style="font-style:italic; color:#555;">点击图片可查看大图</p>
         </div>
         '''
-        
+
         # 按区域生成表格并在每个区域表格下显示对应的详细比对图
         if region_analysis_data:  # 检查是否有分析数据
             # 获取所有区域名称
             region_names = list(set(data['region_name'] for data in region_analysis_data))
-            
+
             for region_name in region_names:
                 # 筛选当前区域的数据
                 region_data = [data for data in region_analysis_data if data['region_name'] == region_name]
-                
+
                 if not region_data:  # 如果没有数据，跳过
                     continue
-                    
+
                 # 获取区域波长范围
                 wl_min = region_data[0]['wl_min']
                 wl_max = region_data[0]['wl_max']
-                
+
                 html_result += f"<h4>{region_name} ({wl_min}-{wl_max}nm)</h4>"
-                
+
                 # 对区域内的曲线按最大值排序
                 region_data.sort(key=lambda x: x['max'], reverse=True)
-                
+
                 # 生成表格
                 region_table = "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
                 region_table += "<tr><th>样本名称</th><th>平均反射率</th><th>标准差</th>"
                 region_table += "<th>最大值</th><th>最大值波长</th><th>最小值</th><th>最小值波长</th></tr>"
-                
+
                 # 填充表格所有数据
                 for data in region_data:
                     region_table += f"<tr><td>{data['label']}</td><td>{data['mean']:.2f}%</td><td>{data['std']:.2f}</td>"
                     region_table += f"<td>{data['max']:.2f}%</td><td>{data['max_wl']:.1f}nm</td>"
                     region_table += f"<td>{data['min']:.2f}%</td><td>{data['min_wl']:.1f}nm</td></tr>"
-                
+
                 region_table += "</table>"
                 html_result += region_table
-                
+
                 # 在表格下方添加该区域的详细比对图
                 try:
                     # 创建该区域的详细图表
@@ -2800,7 +2827,7 @@ class SpectralViewer(QMainWindow):
                     region_ax.set_ylabel('反射率 (%)', fontsize=12)
                     region_ax.set_title(f'{region_name} ({wl_min}-{wl_max}nm) 区域详细分析', fontsize=14, fontweight='bold')
                     region_ax.grid(True, linestyle='--', alpha=0.7)
-                    
+
                     # 添加马卡龙色系背景
                     region_colors = {
                         "紫外-蓝光": "#9370DB",  # 紫罗兰色
@@ -2812,49 +2839,49 @@ class SpectralViewer(QMainWindow):
                     }
                     region_color = region_colors.get(region_name, "#DDDDDD")  # 默认为浅灰色
                     region_ax.axvspan(wl_min, wl_max, alpha=0.25, color=region_color)
-                    
+
                     # 获取当前区域内的y值范围
                     all_y_values = []
                     for data in region_data:
                         if 'region_refl' in data and len(data['region_refl']) > 0:
                             all_y_values.extend(data['region_refl'])
-                    
+
                     if all_y_values:
                         y_min = min(all_y_values) * 0.95
                         y_max = max(all_y_values) * 1.05
                         region_ax.set_ylim(y_min, y_max)  # 设置y轴范围以突显差异
-                    
+
                     # 绘制每条曲线
                     for data in region_data:
                         i = data['curve_idx']
                         label = data['label']
-                        
+
                         # 确保数据存在
                         if 'region_wl' not in data or 'region_refl' not in data or len(data['region_wl']) == 0:
                             continue
-                            
+
                         region_wl = data['region_wl']
                         region_refl = data['region_refl']
                         max_wl = data['max_wl']
                         max_val = data['max']
                         min_wl = data['min_wl']
                         min_val = data['min']
-                        
+
                         # 绘制曲线
-                        region_ax.plot(region_wl, region_refl, '-', color=colors[i % len(colors)], 
+                        region_ax.plot(region_wl, region_refl, '-', color=colors[i % len(colors)],
                                       label=label, linewidth=2.5)
-                        
+
                         # 标记最大值和最小值
-                        region_ax.plot(max_wl, max_val, 'o', color=colors[i % len(colors)], 
+                        region_ax.plot(max_wl, max_val, 'o', color=colors[i % len(colors)],
                                       markersize=10, markeredgewidth=1.5, markeredgecolor='white')
-                        region_ax.annotate(f"{label}: {max_val:.2f}%", 
+                        region_ax.annotate(f"{label}: {max_val:.2f}%",
                                           (max_wl, max_val), xytext=(5, 5),
                                           textcoords='offset points', fontsize=10,
                                           color=colors[i % len(colors)], fontweight='bold')
-                        
-                        region_ax.plot(min_wl, min_val, 's', color=colors[i % len(colors)], 
+
+                        region_ax.plot(min_wl, min_val, 's', color=colors[i % len(colors)],
                                       markersize=10, markeredgewidth=1.5, markeredgecolor='white')
-                    
+
                     # 设置图例
                     if len(region_data) > 8:
                         region_ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='medium')
@@ -2862,16 +2889,16 @@ class SpectralViewer(QMainWindow):
                     else:
                         region_ax.legend(loc='best', fontsize='large')
                         region_fig.tight_layout()
-                    
+
                     # 设置字体大小
                     region_ax.tick_params(axis='both', which='major', labelsize=11)
-                    
+
                     # 将子图嵌入到HTML中
                     region_buf = io.BytesIO()
                     region_fig.savefig(region_buf, format='png', dpi=120, bbox_inches='tight')
                     region_buf.seek(0)
                     region_img_str = base64.b64encode(region_buf.read()).decode('utf-8')
-                    
+
                     html_result += f'''
                     <div style="text-align: center; margin-top: 20px;">
                         <a href="data:image/png;base64,{region_img_str}" target="_blank" title="点击查看大图">
@@ -2882,33 +2909,33 @@ class SpectralViewer(QMainWindow):
                 except Exception as e:
                     print(f"处理区域 {region_name} 详细图表时出错: {str(e)}")
                     # 记录错误但继续处理其他区域
-        
+
         # 2. 波段特征分析
         html_result += "<h3>2. 关键波段差异</h3>"
-        
+
         # 如果有多个光谱数据，分析关键波段差异
         if len(labels) >= 2:
             try:
                 # 获取所有波长的最小值和最大值
                 min_wavelengths = []
                 max_wavelengths = []
-                
+
                 for label in labels:
                     wavelength, _ = spectra_dict[label]
                     # 确保波长是数组且有值
                     if len(wavelength) > 0:
                         min_wavelengths.append(np.min(wavelength))
                         max_wavelengths.append(np.max(wavelength))
-                
+
                 if min_wavelengths and max_wavelengths:
                     # 创建公共波长范围
                     wl_start = max(min_wavelengths)  # 取最大的最小值
                     wl_end = min(max_wavelengths)    # 取最小的最大值
-                    
+
                     # 确保波长范围有效
                     if wl_start < wl_end:
                         common_wavelengths = np.linspace(wl_start, wl_end, 1000)
-                        
+
                         # 重采样数据到相同的波长点
                         resampled_data = {}
                         for i, label in enumerate(labels):
@@ -2917,21 +2944,21 @@ class SpectralViewer(QMainWindow):
                             mask = ~np.isnan(reflectance)
                             valid_wavelength = wavelength[mask]
                             valid_reflectance = reflectance[mask]
-                            
+
                             # 确保有数据点进行插值
                             if len(valid_wavelength) >= 2:
                                 # 线性插值到公共波长
-                                resampled = np.interp(common_wavelengths, 
-                                                    valid_wavelength, 
-                                                    valid_reflectance, 
+                                resampled = np.interp(common_wavelengths,
+                                                    valid_wavelength,
+                                                    valid_reflectance,
                                                     left=np.nan, right=np.nan)
                                 resampled_data[label] = resampled
-                        
+
                         # 如果有足够的数据点且至少有两个光谱，计算显著性差异区域
                         if len(resampled_data) >= 2 and common_wavelengths.size > 10:
                             # 存储显著差异的波段
                             diff_bands = []
-                            
+
                             # 计算每对曲线之间的差异
                             for i in range(len(labels)):
                                 for j in range(i+1, len(labels)):
@@ -2940,46 +2967,46 @@ class SpectralViewer(QMainWindow):
                                     if label1 in resampled_data and label2 in resampled_data:
                                         data1 = resampled_data[label1]
                                         data2 = resampled_data[label2]
-                                        
+
                                         # 计算差异
                                         diff = data1 - data2
-                                        
+
                                         # 找到差异显著的区域
                                         # 使用一个滑动窗口计算局部差异的均值和标准差
                                         window_size = min(50, len(common_wavelengths) // 5)  # 调整窗口大小，确保适应数据
                                         if window_size < 3:  # 窗口太小
                                             continue
-                                            
+
                                         # 确保窗口步长至少为1
                                         step_size = max(1, window_size // 2)
-                                        
+
                                         for k in range(0, len(common_wavelengths) - window_size, step_size):
                                             window_diff = diff[k:k+window_size]
                                             window_wl = common_wavelengths[k:k+window_size]
-                                            
+
                                             # 如果窗口中有NaN值，跳过
                                             if np.isnan(window_diff).any():
                                                 continue
-                                                
+
                                             window_mean = np.mean(window_diff)
                                             window_std = np.std(window_diff)
-                                            
+
                                             # 如果差异足够大，认为是显著差异区域
                                             if abs(window_mean) > 1.5 * np.mean(std_values):
                                                 # 获取窗口中心波长
                                                 center_wl = np.mean(window_wl)
                                                 # 窗口中心在原始数据中的位置
                                                 center_idx = np.argmin(np.abs(common_wavelengths - center_wl))
-                                                
+
                                                 # 计算这个位置上原始数据1和数据2的值
                                                 val1 = data1[center_idx]
                                                 val2 = data2[center_idx]
-                                                
+
                                                 if not np.isnan(val1) and not np.isnan(val2):
                                                     # 找到图表中的位置
                                                     line1_idx = i
                                                     line2_idx = j
-                                                    
+
                                                     # 记录差异区域信息
                                                     diff_bands.append({
                                                         'wavelength': center_wl,
@@ -2991,26 +3018,26 @@ class SpectralViewer(QMainWindow):
                                                         'val1': val1,
                                                         'val2': val2
                                                     })
-                            
+
                             # 对差异显著的波段进行排序
                             if diff_bands:
                                 diff_bands.sort(key=lambda x: x['diff'], reverse=True)
-                                
+
                                 # 最多取前5个差异最显著的波段进行展示
                                 top_diff_bands = diff_bands[:5]
-                                
+
                                 if top_diff_bands:
                                     html_result += "<p>以下波段显示出显著的反射率差异:</p>"
                                     diff_table = "<table border='1' cellpadding='4' style='border-collapse: collapse;'>"
                                     diff_table += "<tr><th>中心波长(nm)</th><th>样本1</th><th>样本2</th><th>反射率差异(%)</th></tr>"
-                                    
+
                                     for band in top_diff_bands:
                                         # 添加到表格
                                         diff_table += (f"<tr><td>{band['wavelength']:.0f}</td>"
                                                       f"<td>{band['label1']} ({band['val1']:.2f}%)</td>"
                                                       f"<td>{band['label2']} ({band['val2']:.2f}%)</td>"
                                                       f"<td>{band['diff']:.2f}</td></tr>")
-                                        
+
                                         # 添加标记点
                                         if band['line1_idx'] in markers_dict:
                                             markers_dict[band['line1_idx']].append(
@@ -3020,7 +3047,7 @@ class SpectralViewer(QMainWindow):
                                             markers_dict[band['line1_idx']] = [
                                                 (band['wavelength'], band['val1'], 'diff', f"差异点: {band['diff']:.2f}%")
                                             ]
-                                        
+
                                         if band['line2_idx'] in markers_dict:
                                             markers_dict[band['line2_idx']].append(
                                                 (band['wavelength'], band['val2'], 'diff', f"差异点: {band['diff']:.2f}%")
@@ -3029,7 +3056,7 @@ class SpectralViewer(QMainWindow):
                                             markers_dict[band['line2_idx']] = [
                                                 (band['wavelength'], band['val2'], 'diff', f"差异点: {band['diff']:.2f}%")
                                             ]
-                                    
+
                                     diff_table += "</table>"
                                     html_result += diff_table
                                 else:
@@ -3046,10 +3073,10 @@ class SpectralViewer(QMainWindow):
                 html_result += f"<p>波段差异分析过程中出错: {str(e)}</p>"
         else:
             html_result += "<p>需要至少两个样本才能进行波段差异分析。</p>"
-        
+
         # 3. 峰值分析
         html_result += "<h3>3. 光谱峰值与谷值分析</h3>"
-        
+
         # 对每个光谱曲线查找峰值和谷值
         for i, (label, (wavelength, reflectance)) in enumerate(spectra_dict.items()):
             try:
@@ -3057,10 +3084,10 @@ class SpectralViewer(QMainWindow):
                 mask = ~np.isnan(reflectance)
                 valid_wavelength = wavelength[mask]
                 valid_reflectance = reflectance[mask]
-                
+
                 if len(valid_reflectance) < 10:  # 确保有足够的数据点
                     continue
-                
+
                 # 平滑处理
                 window_length = min(11, len(valid_reflectance) // 5 * 2 + 1)  # 确保是奇数
                 if window_length < 3:  # 如果窗口长度太小，使用原始数据
@@ -3074,29 +3101,29 @@ class SpectralViewer(QMainWindow):
                         # 用前/后有效值填充开头/结尾的NaN
                         first_valid = np.where(~nan_mask)[0][0]
                         last_valid = np.where(~nan_mask)[0][-1]
-                        
+
                         # 填充开头
                         if first_valid > 0:
                             smoothed[:first_valid] = smoothed[first_valid]
-                        
+
                         # 填充结尾
                         if last_valid < len(smoothed) - 1:
                             smoothed[last_valid+1:] = smoothed[last_valid]
                     else:
                         # 如果全是NaN，则使用原始数据
                         smoothed = valid_reflectance
-                
+
                 # 如果数据点太少，则跳过峰值检测
                 if len(smoothed) < 5:
                     continue
-                    
+
                 # 查找峰值 - 确保距离参数不大于数据点数
                 peak_distance = min(20, len(smoothed) // 4)
                 peak_indices, _ = find_peaks(smoothed, height=np.mean(smoothed), distance=peak_distance)
-                
+
                 # 查找谷值 - 同样确保距离参数合理
                 trough_indices, _ = find_peaks(-smoothed, height=-np.mean(smoothed), distance=peak_distance)
-                
+
                 # 只保留最显著的3个峰值
                 if len(peak_indices) > 0:
                     peak_heights = smoothed[peak_indices]
@@ -3105,19 +3132,19 @@ class SpectralViewer(QMainWindow):
                     if valid_peaks:
                         peak_idx_sorted = sorted(valid_peaks, key=lambda i: peak_heights[i], reverse=True)
                         top_peaks = [peak_indices[i] for i in peak_idx_sorted[:min(3, len(peak_idx_sorted))]]
-                        
+
                         # 添加峰值标记
                         for peak_idx in top_peaks:
                             if peak_idx < len(valid_wavelength) and peak_idx < len(valid_reflectance):
                                 peak_wl = valid_wavelength[peak_idx]
                                 peak_val = valid_reflectance[peak_idx]
-                                
+
                                 # 添加到标记字典
                                 if i in markers_dict:
                                     markers_dict[i].append((peak_wl, peak_val, 'peak', f"峰值: {peak_val:.2f}%"))
                                 else:
                                     markers_dict[i] = [(peak_wl, peak_val, 'peak', f"峰值: {peak_val:.2f}%")]
-                
+
                 # 只保留最显著的3个谷值
                 if len(trough_indices) > 0:
                     trough_depths = smoothed[trough_indices]
@@ -3126,13 +3153,13 @@ class SpectralViewer(QMainWindow):
                     if valid_troughs:
                         trough_idx_sorted = sorted(valid_troughs, key=lambda i: trough_depths[i])
                         top_troughs = [trough_indices[i] for i in trough_idx_sorted[:min(3, len(trough_idx_sorted))]]
-                        
+
                         # 添加谷值标记
                         for trough_idx in top_troughs:
                             if trough_idx < len(valid_wavelength) and trough_idx < len(valid_reflectance):
                                 trough_wl = valid_wavelength[trough_idx]
                                 trough_val = valid_reflectance[trough_idx]
-                                
+
                                 # 添加到标记字典
                                 if i in markers_dict:
                                     markers_dict[i].append((trough_wl, trough_val, 'trough', f"谷值: {trough_val:.2f}%"))
@@ -3142,21 +3169,21 @@ class SpectralViewer(QMainWindow):
                 # 记录错误但继续处理其他曲线
                 print(f"处理曲线 {label} 的峰谷分析时出错: {str(e)}")
                 continue
-        
+
         # 4. 总结分析
         html_result += "<h3>4. 分析总结</h3>"
-        
+
         if len(labels) >= 2:
             try:
                 # 计算均值差异
                 mean_diff = max(mean_values) - min(mean_values)
                 # 计算标准差的均值
                 avg_std = np.mean(std_values)
-                
+
                 # 添加总结内容
                 html_result += f"<p>所分析的 {len(labels)} 个光谱样本中，平均反射率差异为 {mean_diff:.2f}%，"
                 html_result += f"标准差平均值为 {avg_std:.2f}。</p>"
-                
+
                 # 基于统计特征生成简要总结
                 if mean_diff > 3 * avg_std:
                     html_result += "<p>分析结论：光谱反射率存在<strong>显著差异</strong>，不同样本之间的光谱特征差别较大。</p>"
@@ -3164,7 +3191,7 @@ class SpectralViewer(QMainWindow):
                     html_result += "<p>分析结论：光谱反射率存在<strong>一定差异</strong>，但总体趋势相似。</p>"
                 else:
                     html_result += "<p>分析结论：光谱反射率<strong>差异较小</strong>，各样本光谱特征非常接近。</p>"
-                    
+
                 # 添加波长范围特征分析
                 regions = [
                     (350, 450, "紫外-蓝光"),
@@ -3174,49 +3201,49 @@ class SpectralViewer(QMainWindow):
                     (620, 750, "红光"),
                     (750, 1050, "近红外")
                 ]
-                
+
                 # 计算各区域的平均差异
                 html_result += "<p>不同波长区域的差异特征：</p>"
                 html_result += "<ul>"
-                
+
                 for wl_min, wl_max, region_name in regions:
                     try:
                         # 检查是否有数据在此区域
                         region_diffs = []
-                        
+
                         # 遍历每对光谱
                         for i in range(len(labels)):
                             for j in range(i+1, len(labels)):
                                 label1, label2 = labels[i], labels[j]
                                 wl1, ref1 = spectra_dict[label1]
                                 wl2, ref2 = spectra_dict[label2]
-                                
+
                                 # 获取特定波长范围的数据
                                 mask1 = (wl1 >= wl_min) & (wl1 <= wl_max)
                                 mask2 = (wl2 >= wl_min) & (wl2 <= wl_max)
-                                
+
                                 if np.any(mask1) and np.any(mask2) and np.sum(mask1) > 1 and np.sum(mask2) > 1:
                                     # 确保有足够的数据点
                                     wl1_region = wl1[mask1]
                                     ref1_region = ref1[mask1]
                                     wl2_region = wl2[mask2]
                                     ref2_region = ref2[mask2]
-                                    
+
                                     # 计算公共波长范围
                                     common_min = max(np.min(wl1_region), np.min(wl2_region))
                                     common_max = min(np.max(wl1_region), np.max(wl2_region))
-                                    
+
                                     if common_min < common_max:
                                         # 重采样到相同波长点进行比较
                                         common_wl = np.linspace(common_min, common_max, 50)
-                                        
+
                                         ref1_interp = np.interp(common_wl, wl1_region, ref1_region)
                                         ref2_interp = np.interp(common_wl, wl2_region, ref2_region)
-                                        
+
                                         # 计算均方根差异
                                         rmse = np.sqrt(np.mean((ref1_interp - ref2_interp) ** 2))
                                         region_diffs.append(rmse)
-                        
+
                         if region_diffs:
                             avg_region_diff = np.mean(region_diffs)
                             if avg_region_diff > 2 * avg_std:
@@ -3227,13 +3254,13 @@ class SpectralViewer(QMainWindow):
                                 html_result += f"<li><strong>{region_name} ({wl_min}-{wl_max}nm)</strong>: 差异较小 (均方根差异: {avg_region_diff:.2f}%)</li>"
                     except Exception as e:
                         html_result += f"<li><strong>{region_name} ({wl_min}-{wl_max}nm)</strong>: 区域分析时出错: {str(e)}</li>"
-                
+
                 html_result += "</ul>"
             except Exception as e:
-                html_result += f"<p>总结分析时出错: {str(e)}</p>"    
+                html_result += f"<p>总结分析时出错: {str(e)}</p>"
         else:
             html_result += "<p>需要至少两个样本才能进行差异分析对比。</p>"
-            
+
         # 5. 方法说明
         html_result += "<h3>5. 分析方法说明</h3>"
         html_result += """
@@ -3246,39 +3273,39 @@ class SpectralViewer(QMainWindow):
         </ul>
         <p>※注：图表中已标记重要的特征点，包括最大值、最小值、显著差异点、峰值和谷值。</p>
         """
-        
+
         return html_result, markers_dict
 
     def analyze_single_curve(self):
         """分析单条光谱曲线的详细特征"""
         selected_item = self.file_list.selectedItems()[0]
         curve_name = selected_item.text()
-        
+
         if curve_name not in self.spectra_data:
             QMessageBox.warning(self, "无法分析", f"未找到选中曲线 '{curve_name}' 的数据。")
             return
-        
+
         # 获取当前波长范围
         wl_min = float(self.wl_min.currentText())
         wl_max = float(self.wl_max.currentText())
-        
+
         # 获取曲线数据并筛选波长范围
         wavelength, reflectance = self.spectra_data[curve_name]
         mask = (wavelength >= wl_min) & (wavelength <= wl_max)
-        
+
         filtered_data = (wavelength[mask], reflectance[mask])
-        
+
         # 查找曲线在当前显示中的索引
         curve_index = -1
         for i, label in enumerate(self.canvas.axes.get_legend().get_texts()):
             if label.get_text() == curve_name:
                 curve_index = i
                 break
-        
+
         if np.sum(mask) < 5:
             QMessageBox.warning(self, "无法分析", f"当前波长范围内的数据点不足，无法进行分析。")
             return
-        
+
         # 创建并显示单条曲线分析对话框
         dialog = SingleCurveAnalysisDialog(self, filtered_data, curve_name, curve_index)
         dialog.exec_()
@@ -3286,55 +3313,55 @@ class SpectralViewer(QMainWindow):
     def load_csv_file(self):
         """加载单个CSV文件并解析数据"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, 
-            "选择CSV文件", 
+            self,
+            "选择CSV文件",
             QDir.currentPath(),
             "CSV文件 (*.csv);;所有文件 (*)"
         )
-        
+
         if not file_path:
             return
-            
+
         try:
             # 读取文件
             wavelength, reflectance = self.read_spectral_data(file_path)
-            
+
             # 生成显示标签（使用文件名）
             file_name = os.path.basename(file_path)
             display_label = file_name
-            
+
             # 检查是否已经加载相同名称的文件
             count = 0
             base_label = display_label
             while display_label in self.spectra_data:
                 count += 1
                 display_label = f"{base_label} ({count})"
-            
+
             # 存储数据
             self.spectra_data[display_label] = (wavelength, reflectance)
-            
+
             # 添加到列表显示
             self.file_list.addItem(display_label)
-            
+
             # 启用按钮
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
             self.analyze_btn.setEnabled(True)
-            
+
             # 显示成功消息
-            QMessageBox.information(self, "数据加载完成", 
+            QMessageBox.information(self, "数据加载完成",
                                   f"已加载CSV文件: {file_name}")
-            
+
             # 自动更新图表
             self.update_plot()
-            
+
         except Exception as e:
-            QMessageBox.critical(self, "加载错误", 
+            QMessageBox.critical(self, "加载错误",
                                 f"无法加载文件 {file_path}:\n{str(e)}")
-    
+
     def set_reference_curve(self, curve_name):
         """设置指定曲线为标准曲线
-        
+
         Args:
             curve_name: 标准曲线的名称
         """
@@ -3347,10 +3374,10 @@ class SpectralViewer(QMainWindow):
                     # 移除之前项目的标准曲线标记
                     item.setText(item.text().replace(" [标准]", ""))
                     break
-        
+
         # 设置新的标准曲线
         self.reference_curve = curve_name
-        
+
         # 更新文件列表项显示
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
@@ -3360,17 +3387,17 @@ class SpectralViewer(QMainWindow):
                     item.setText(f"{item.text()} [标准]")
                 item.setForeground(QBrush(QColor("red")))  # 设置文本为红色
                 break
-        
+
         # 更新图表以突出显示标准曲线
         self.update_plot()
-        
+
         QMessageBox.information(self, "设置标准曲线", f"已将 '{curve_name}' 设为标准曲线")
-    
+
     def remove_reference_curve(self):
         """取消当前标准曲线的设置"""
         if self.reference_curve is None:
             return
-            
+
         # 更新文件列表项显示
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
@@ -3379,113 +3406,130 @@ class SpectralViewer(QMainWindow):
                 item.setText(item.text().replace(" [标准]", ""))
                 item.setForeground(QBrush(QColor("black")))  # 恢复默认文本颜色
                 break
-        
+
         # 清空标准曲线设置
         self.reference_curve = None
-        
+
         # 更新图表
         self.update_plot()
-    
+
     def add_wavelength(self):
         """添加波长到列表"""
         text = self.wavelength_input.text().strip()
         try:
             # 尝试将输入解析为波长值
             wavelength = float(text)
-            
+
             # 检查是否在有效范围内
             wl_min = float(self.wl_min.currentText())
             wl_max = float(self.wl_max.currentText())
-            
+
             if wavelength < wl_min or wavelength > wl_max:
-                QMessageBox.warning(self, "无效波长", 
+                QMessageBox.warning(self, "无效波长",
                                  f"波长必须在当前显示范围 ({wl_min}nm - {wl_max}nm) 内")
                 return
-                
+
             # 检查是否已存在
             for i in range(self.wavelength_list.count()):
                 if abs(float(self.wavelength_list.item(i).text()) - wavelength) < 0.1:
-                    QMessageBox.information(self, "波长已存在", 
+                    QMessageBox.information(self, "波长已存在",
                                          f"波长 {wavelength}nm 已在列表中")
                     return
-            
+
             # 添加到列表
             self.wavelength_list.addItem(f"{wavelength:.1f}")
-            
+
             # 清除输入框
             self.wavelength_input.clear()
-            
+
         except ValueError:
             QMessageBox.warning(self, "输入错误", "请输入有效的波长数值")
-    
+
     def show_wavelength_context_menu(self, position):
         """显示波长列表的右键菜单"""
         if self.wavelength_list.count() == 0:
             return
-            
+
         context_menu = QMenu(self)
-        
+
         # 删除选中项
         remove_action = QAction("删除选中波长", self)
         remove_action.triggered.connect(self.remove_selected_wavelength)
         context_menu.addAction(remove_action)
-        
+
         # 清空所有
         if self.wavelength_list.count() > 1:
             clear_all_action = QAction("清空所有波长", self)
             clear_all_action.triggered.connect(self.clear_all_wavelengths)
             context_menu.addAction(clear_all_action)
-        
+
         context_menu.exec_(self.wavelength_list.mapToGlobal(position))
-    
+
     def remove_selected_wavelength(self):
         """移除选中的波长"""
         for item in self.wavelength_list.selectedItems():
             self.wavelength_list.takeItem(self.wavelength_list.row(item))
-    
+
     def clear_all_wavelengths(self):
         """清空所有波长"""
         self.wavelength_list.clear()
-    
+
     def mark_selected_wavelengths(self):
         """标记所有选择的波长"""
         if not self.spectra_data:
             QMessageBox.warning(self, "无数据", "请先加载光谱数据")
             return
-            
+
         # 获取所有波长
         wavelengths = []
         for i in range(self.wavelength_list.count()):
             wavelengths.append(float(self.wavelength_list.item(i).text()))
-            
+
         if not wavelengths:
             QMessageBox.information(self, "未选择波长", "请先添加要标记的波长")
             return
-            
+
         # 先清除现有标记
         self.canvas.clear_wavelength_markers()
-        
+
         # 添加新标记
         self.canvas.add_wavelength_markers(wavelengths)
-    
+
     def clear_wavelength_marks(self):
         """清除所有波长标记"""
         self.canvas.clear_wavelength_markers()
 
 
 if __name__ == '__main__':
+    # 确保高DPI显示正常
+    if hasattr(Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+
     app = QApplication(sys.argv)
-    
+
     # 设置应用程序级别的字体
     font = QFont("Microsoft YaHei")
     app.setFont(font)
-    
-    # 中文编码设置
-    QTextCodec.setCodecForLocale(QTextCodec.codecForName("UTF-8"))
-    
-    app.setStyle('Fusion')  # 使用Fusion风格，在不同平台上看起来一致
-    
+
+    # 使用Windows风格，这在Windows平台上通常能确保正确显示窗口装饰
+    app.setStyle('Windows')
+
+    # 创建主窗口
     window = SpectralViewer()
+
+    # 重置窗口标志为默认值
+    window.setWindowFlags(Qt.WindowType.Window)
+
+    # 确保窗口以正常状态显示
+    window.setWindowState(Qt.WindowState.WindowNoState)
+
+    # 显示窗口
     window.show()
-    
-    sys.exit(app.exec_()) 
+
+    # 将窗口提升到前台
+    window.raise_()
+    window.activateWindow()
+
+    sys.exit(app.exec())
