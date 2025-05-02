@@ -29,6 +29,7 @@ from scipy.ndimage import gaussian_filter1d
 import io
 import base64
 import itertools
+import types
 
 # 配置matplotlib使用中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'SimSun', 'Arial Unicode MS']
@@ -50,7 +51,7 @@ class BaseAnalysisDialog(QDialog):
         self.setGeometry((screen.width() - width) // 2, (screen.height() - height) // 2, width, height)
 
         # 设置窗口标志，允许最大化
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
         self.setModal(True)
 
         # 创建主布局
@@ -66,7 +67,7 @@ class BaseAnalysisDialog(QDialog):
 
         # 标题文本
         title_label = QLabel(title)
-        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
+        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         title_layout.addWidget(title_label)
 
         # 添加标题栏到主布局
@@ -145,7 +146,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         stats_table = QTableWidget()
         stats_table.setColumnCount(2)
         stats_table.setHorizontalHeaderLabels(["统计指标", "数值"])
-        stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
@@ -388,7 +389,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
             "波长区域", "平均反射率", "标准差",
             "最大值", "最大值波长", "最小值", "最小值波长"
         ])
-        region_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        region_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         # 区域分析图表
         fig = Figure(figsize=(9, 6), dpi=100)
@@ -493,7 +494,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
 
         # 创建画布并设置尺寸策略
         canvas = FigureCanvas(fig)
-        canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # 创建并添加导航工具栏
         toolbar = NavigationToolbar(canvas, tab)
@@ -616,7 +617,7 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         features_table = QTableWidget()
         features_table.setColumnCount(3)
         features_table.setHorizontalHeaderLabels(["特征点类型", "波长 (nm)", "反射率 (%)"])
-        features_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        features_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         # 计算表格行数
         row_count = len(peaks) + len(valleys)
@@ -1023,23 +1024,33 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         self.tab_widget.addTab(tab, "标准比对")
 
 
-class SpectralCanvas(FigureCanvas):
+class SpectralCanvas(QWidget):
     """用于显示光谱数据的画布类"""
 
     def __init__(self, parent=None, width=10, height=6, dpi=100):
+        super(SpectralCanvas, self).__init__(parent)
+
         # 创建MatPlotLib图形和坐标轴
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
 
-        # 初始化FigureCanvas
-        super(SpectralCanvas, self).__init__(self.fig)
-        self.setParent(parent)
+        # 创建FigureCanvas
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        self.canvas = FigureCanvasQTAgg(self.fig)
+        self.canvas.setParent(self)
 
-        # 设置FigureCanvas的大小策略
-        FigureCanvas.setSizePolicy(self,
-                                QSizePolicy.Policy.Expanding,
-                                QSizePolicy.Policy.Expanding)
-        FigureCanvas.updateGeometry(self)
+        # 创建布局并添加画布
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.canvas)
+
+    def draw(self):
+        """重绘画布"""
+        self.canvas.draw()
+
+    def draw_idle(self):
+        """延迟重绘画布"""
+        self.canvas.draw_idle()
 
         # 启用鼠标跟踪，以便接收鼠标事件
         self.setMouseTracking(True)
@@ -2086,22 +2097,180 @@ class SpectralViewer(QMainWindow):
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
 
-        # 创建绘图画布
-        self.canvas = SpectralCanvas(plot_panel)
-        self.toolbar = NavigationToolbar(self.canvas, plot_panel)
+        # 创建一个简洁的工具栏容器，不包含标题
+        toolbar_widget = QWidget()
+        toolbar_layout = QVBoxLayout(toolbar_widget)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(0)  # 减少组件间的间距，使布局更紧凑
 
-        # 连接导航工具栏的重置视图按钮
-        self.toolbar.actions()[0].triggered.connect(self.canvas.reset_view)
+        # 保存工具栏容器引用
+        self.toolbar = toolbar_widget
+        self.toolbar_layout = toolbar_layout
 
-        plot_layout.addWidget(self.toolbar)
-        plot_layout.addWidget(self.canvas)
+        # 使用PySide6专用的matplotlib后端
+        import matplotlib
+        matplotlib.use('QtAgg')  # 使用QtAgg后端，适用于PySide6
+
+        # 导入matplotlib的Figure类和FigureCanvas
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+        # 使用matplotlib的Figure，设置更美观的样式
+        self.fig = Figure(figsize=(10, 6), dpi=100, facecolor='white')
+        self.axes = self.fig.add_subplot(111)
+
+        # 设置更美观的图表样式
+        self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.1)
+
+        # 设置网格样式
+        self.axes.grid(True, linestyle='--', alpha=0.7, color='#cccccc')
+
+        # 设置轴标签样式
+        self.axes.set_xlabel('波长 (nm)', fontsize=11, fontweight='bold')
+        self.axes.set_ylabel('反射率 (%)', fontsize=11, fontweight='bold')
+
+        # 设置刻度标签样式
+        self.axes.tick_params(axis='both', which='major', labelsize=10)
+
+        # 设置图表标题样式
+        self.axes.set_title("反射率光谱对比图", fontsize=12, fontweight='bold')
+
+        # 创建一个QWidget作为容器
+        self.canvas_widget = QWidget()
+
+        # 创建FigureCanvasQTAgg - 确保使用与导入一致的后端
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        self.canvas = FigureCanvasQTAgg(self.fig)
+
+        # 使用QVBoxLayout布局
+        self.canvas_layout = QVBoxLayout(self.canvas_widget)
+        self.canvas_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 将canvas添加到布局中 - 使用一个简单的方法
+        # 在PySide6中，我们需要将FigureCanvas转换为QWidget
+        # 但由于直接转换有问题，我们使用一个替代方案
+
+        # 创建一个新的QWidget作为容器
+        canvas_container = QWidget()
+        canvas_container_layout = QVBoxLayout(canvas_container)
+        canvas_container_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 将FigureCanvas添加到布局中
+        # 这里我们使用Python的属性机制来绕过类型检查
+        canvas_container_layout.addWidget(self.canvas)
+
+        # 将容器添加到主布局中
+        self.canvas_layout.addWidget(canvas_container)
+
+        # 初始化一些属性
+        self.canvas.lines = []
+        self.canvas.legend_lines = []
+        self.canvas.wavelength_vlines = []
+        self.canvas.wavelength_markers = []
+        self.canvas.wavelength_annotations = []
+        self.canvas.wavelength_labels = []
+        self.canvas.highlighted_line = None
+        self.canvas.original_linewidths = {}
+        self.canvas._show_grid = True
+        self.canvas._original_xlim = None
+        self.canvas._original_ylim = None
+
+
+
+        # 创建matplotlib的导航工具栏
+        try:
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+
+            # 创建一个自定义的导航工具栏
+            self.nav_toolbar = NavigationToolbar(self.canvas, self)
+
+            # 设置工具栏样式，使其透明并更美观
+            self.nav_toolbar.setStyleSheet("""
+                QToolBar {
+                    background-color: transparent;
+                    border: none;
+                    padding: 2px;
+                }
+                QToolButton {
+                    background-color: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 3px;
+                    padding: 3px;
+                }
+                QToolButton:hover {
+                    background-color: rgba(224, 224, 224, 0.7);
+                    border: 1px solid #ccc;
+                }
+                QToolButton:pressed {
+                    background-color: rgba(208, 208, 208, 0.7);
+                }
+            """)
+
+            # 将导航工具栏添加到工具栏布局
+            self.toolbar_layout.addWidget(self.nav_toolbar)
+
+        except Exception as e:
+            print(f"创建导航工具栏时出错: {str(e)}")
+            # 如果创建导航工具栏失败，添加错误提示
+            error_label = QLabel("工具栏加载失败")
+            error_label.setStyleSheet("color: red; padding: 5px;")
+            self.toolbar_layout.addWidget(error_label)
+
+        # 创建一个美观的图表容器，撑满右侧视图
+        chart_container = QWidget()
+        chart_container.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+        """)
+        chart_layout = QVBoxLayout(chart_container)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.setSpacing(0)
+
+        # 设置工具栏的样式为透明
+        self.toolbar.setStyleSheet("""
+            background-color: transparent;
+        """)
+
+        # 确保图表区域保持白色背景
+        self.canvas_widget.setStyleSheet("""
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        """)
+
+        # 添加工具栏和图表到容器
+        chart_layout.addWidget(self.toolbar)
+        chart_layout.addWidget(self.canvas_widget, 1)  # 设置拉伸因子为1，使图表填充剩余空间
+
+        # 添加图表容器到主布局，并设置边距为0，使其撑满右侧视图
+        plot_layout.addWidget(chart_container)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
 
         # 创建分割器，允许调整两侧面板的大小
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(control_panel)
         splitter.addWidget(plot_panel)
-        splitter.setSizes([300, 900])  # 设置初始大小
 
+        # 设置分割器的样式，使其更美观
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #cccccc;
+                width: 2px;
+            }
+            QSplitter::handle:hover {
+                background-color: #999999;
+            }
+        """)
+
+        # 设置初始大小比例 - 左侧控制面板占比更小，右侧图表区域更大
+        splitter.setSizes([250, 950])  # 设置初始大小
+
+        # 设置拉伸因子，使右侧图表区域优先获得额外空间
+        splitter.setStretchFactor(0, 0)  # 控制面板不拉伸
+        splitter.setStretchFactor(1, 1)  # 图表区域拉伸
+
+        # 设置主布局的边距为0，使分割器撑满整个窗口
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(splitter)
 
     def center_window(self):
@@ -2202,10 +2371,16 @@ class SpectralViewer(QMainWindow):
 
             # 确认是否删除
             message = f"确定要移除选中的 {len(selected_items)} 个文件吗？"
-            reply = QMessageBox.question(self, '确认删除', message,
-                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
-            if reply == QMessageBox.No:
+            # 使用兼容PyQt6和PySide6的方式创建消息框
+            msg_box = QMessageBox()
+            msg_box.setWindowTitle('确认删除')
+            msg_box.setText(message)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = msg_box.exec()
+
+            if reply == QMessageBox.StandardButton.No:
                 return
 
             # 移除选中的文件
@@ -2244,16 +2419,24 @@ class SpectralViewer(QMainWindow):
             return
 
         # 确认是否清空
-        reply = QMessageBox.question(self, '确认清空', '确定要清空所有已加载的数据吗？',
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        # 使用兼容PyQt6和PySide6的方式创建消息框
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle('确认清空')
+        msg_box.setText('确定要清空所有已加载的数据吗？')
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        reply = msg_box.exec()
 
-        if reply == QMessageBox.No:
+        if reply == QMessageBox.StandardButton.No:
             return
 
         # 清空数据
         self.spectra_data.clear()
         self.file_list.clear()
-        self.canvas.clear_plot()
+
+        # 清除图表
+        self.axes.clear()
+        self.canvas.draw()
 
         # 清空标准曲线设置
         self.reference_curve = None
@@ -2267,78 +2450,97 @@ class SpectralViewer(QMainWindow):
 
     def load_data_folder(self):
         """加载数据文件夹并处理所有CSV文件"""
-        folder_path = QFileDialog.getExistingDirectory(self, "选择数据文件夹",
-                                                      QDir.currentPath())
+        try:
+            folder_path = QFileDialog.getExistingDirectory(self, "选择数据文件夹",
+                                                          QDir.currentPath())
 
-        if not folder_path:
-            return
+            if not folder_path:
+                return
 
-        # 清空现有数据
-        reply = QMessageBox.StandardButton.Yes
-        if self.file_list.count() > 0:
-            reply = QMessageBox.question(self, '确认操作',
-                                       '是否先清空当前已加载的数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据',
-                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                       QMessageBox.StandardButton.Yes)
+            # 清空现有数据
+            # 默认值
+            reply = QMessageBox.StandardButton.Yes
 
-        if reply == QMessageBox.StandardButton.Yes:
-            self.file_list.clear()
-            self.spectra_data.clear()
+            # 如果已有数据，询问是否清空
+            if self.file_list.count() > 0:
+                # 使用兼容PyQt6和PySide6的方式创建消息框
+                msg_box = QMessageBox()
+                msg_box.setWindowTitle('确认操作')
+                msg_box.setText('是否先清空当前已加载的数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据')
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+                reply = msg_box.exec()
 
-        self.base_folder = folder_path
+            if reply == QMessageBox.StandardButton.Yes:
+                self.file_list.clear()
+                self.spectra_data.clear()
 
-        # 遍历文件夹中的所有子文件夹
-        files_loaded = 0
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                if file.endswith('.csv'):
-                    file_path = os.path.join(root, file)
-                    try:
-                        wavelength, reflectance = self.read_spectral_data(file_path)
+            self.base_folder = folder_path
 
-                        # 获取相对路径并处理为显示标签
-                        rel_path = os.path.relpath(file_path, folder_path)
-                        # 移除rawdata前缀，如果存在
-                        if rel_path.startswith('rawdata'):
-                            rel_path = rel_path.replace('rawdata/', '', 1)
-                            rel_path = rel_path.replace('rawdata\\', '', 1)
+            # 遍历文件夹中的所有子文件夹
+            files_loaded = 0
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    if file.endswith('.csv'):
+                        file_path = os.path.join(root, file)
+                        try:
+                            wavelength, reflectance = self.read_spectral_data(file_path)
 
-                        # 分解路径获取子文件夹名和文件名
-                        path_parts = rel_path.split(os.path.sep)
+                            # 获取相对路径并处理为显示标签
+                            rel_path = os.path.relpath(file_path, folder_path)
+                            # 移除rawdata前缀，如果存在
+                            if rel_path.startswith('rawdata'):
+                                rel_path = rel_path.replace('rawdata/', '', 1)
+                                rel_path = rel_path.replace('rawdata\\', '', 1)
 
-                        if len(path_parts) > 1:
-                            # 有子文件夹的情况
-                            subfolder = path_parts[0]
-                            filename = path_parts[-1]
-                            display_label = f"{subfolder}/{filename}"
-                        else:
-                            # 直接在根目录下的文件
-                            display_label = rel_path
+                            # 分解路径获取子文件夹名和文件名
+                            path_parts = rel_path.split(os.path.sep)
 
-                        # 存储数据
-                        self.spectra_data[display_label] = (wavelength, reflectance)
+                            if len(path_parts) > 1:
+                                # 有子文件夹的情况
+                                subfolder = path_parts[0]
+                                filename = path_parts[-1]
+                                display_label = f"{subfolder}/{filename}"
+                            else:
+                                # 直接在根目录下的文件
+                                display_label = rel_path
 
-                        # 添加到列表显示
-                        self.file_list.addItem(display_label)
-                        files_loaded += 1
-                    except Exception as e:
-                        print(f"无法读取文件 {file_path}: {e}")
+                            # 存储数据
+                            self.spectra_data[display_label] = (wavelength, reflectance)
 
-        # 启用按钮
-        if files_loaded > 0:
-            self.reload_btn.setEnabled(True)
-            self.clear_btn.setEnabled(True)
-            self.analyze_btn.setEnabled(True)  # 启用分析按钮
+                            # 添加到列表显示
+                            self.file_list.addItem(display_label)
+                            files_loaded += 1
+                        except Exception as e:
+                            print(f"无法读取文件 {file_path}: {e}")
+                            # 继续处理下一个文件，不中断整个加载过程
 
-            # 显示加载的文件数量
-            QMessageBox.information(self, "数据加载完成",
-                                  f"已加载 {files_loaded} 个光谱数据文件，并在图表中显示。")
+            # 启用按钮
+            if files_loaded > 0:
+                self.reload_btn.setEnabled(True)
+                self.clear_btn.setEnabled(True)
+                self.analyze_btn.setEnabled(True)  # 启用分析按钮
 
-            # 自动更新图表，显示所有数据
-            self.update_plot()
-        else:
-            QMessageBox.warning(self, "未找到数据",
-                              f"在所选文件夹中未找到有效的CSV数据文件。")
+                # 显示加载的文件数量
+                QMessageBox.information(self, "数据加载完成",
+                                      f"已加载 {files_loaded} 个光谱数据文件，并在图表中显示。")
+
+                # 自动更新图表，显示所有数据
+                try:
+                    self.update_plot()
+                except Exception as e:
+                    print(f"更新图表时出错: {e}")
+                    QMessageBox.warning(self, "图表更新错误",
+                                      f"数据已加载，但更新图表时出错: {str(e)}")
+            else:
+                QMessageBox.warning(self, "未找到数据",
+                                  f"在所选文件夹中未找到有效的CSV数据文件。")
+        except Exception as e:
+            print(f"加载数据文件夹时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "加载错误",
+                               f"加载数据文件夹时出错: {str(e)}")
 
     def read_spectral_data(self, file_path):
         """读取光谱数据文件并提取波长和反射率数据
@@ -2438,42 +2640,128 @@ class SpectralViewer(QMainWindow):
 
     def update_plot(self):
         """更新绘图，显示所有光谱数据"""
-        if not self.spectra_data:
-            self.canvas.clear_plot()
-            return
-
-        # 获取波长范围
         try:
-            wl_min = float(self.wl_min.currentText())
-            wl_max = float(self.wl_max.currentText())
+            if not self.spectra_data:
+                # 清除图表
+                self.axes.clear()
+                self.canvas.draw()
+                return
 
-            # 筛选波长范围内的数据
-            filtered_data = {}
-            for label, (wavelength, reflectance) in self.spectra_data.items():
-                # 筛选波长范围
-                mask = (wavelength >= wl_min) & (wavelength <= wl_max)
-                if np.any(mask):  # 确保有数据点
-                    filtered_data[label] = (wavelength[mask], reflectance[mask])
+            # 获取波长范围
+            try:
+                wl_min = float(self.wl_min.currentText())
+                wl_max = float(self.wl_max.currentText())
 
-            # 绘制所有光谱数据
-            if filtered_data:
-                # 传递标准曲线信息
-                reference_curve = None
-                if self.reference_curve is not None:
-                    reference_curve = self.reference_curve.replace(" [标准]", "")
+                # 筛选波长范围内的数据
+                filtered_data = {}
+                for label, (wavelength, reflectance) in self.spectra_data.items():
+                    # 筛选波长范围
+                    mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+                    if np.any(mask):  # 确保有数据点
+                        filtered_data[label] = (wavelength[mask], reflectance[mask])
 
-                self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
+                # 绘制所有光谱数据
+                if filtered_data:
+                    # 清除当前图表
+                    self.axes.clear()
 
-                # 如果有波长标记，重新添加
-                if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
-                    wavelengths = []
-                    for i in range(self.wavelength_list.count()):
-                        wavelengths.append(float(self.wavelength_list.item(i).text()))
+                    # 保存线条引用
+                    self.canvas.lines = []
 
-                    if wavelengths:
-                        self.canvas.add_wavelength_markers(wavelengths)
-        except Exception as e:
-            QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
+                    # 获取标准曲线信息
+                    reference_curve = None
+                    if self.reference_curve is not None:
+                        reference_curve = self.reference_curve.replace(" [标准]", "")
+
+                    # 生成不同的颜色
+                    colors = matplotlib.cm.tab20(np.linspace(0, 1, len(filtered_data)))
+
+                    # 绘制所有曲线
+                    for i, (label, (wavelength, reflectance)) in enumerate(filtered_data.items()):
+                        try:
+                            # 移除NaN值
+                            mask = ~np.isnan(reflectance)
+                            valid_wavelength = wavelength[mask]
+                            valid_reflectance = reflectance[mask]
+
+                            if len(valid_wavelength) == 0 or len(valid_reflectance) == 0:
+                                print(f"警告: {label} 在当前波长范围内没有有效数据点")
+                                continue
+
+                            # 绘制曲线
+                            if reference_curve and label.replace(" [标准]", "") == reference_curve:
+                                # 标准曲线使用红色
+                                line, = self.axes.plot(valid_wavelength, valid_reflectance,
+                                              label=f"{label} [标准]", color='red',
+                                              linewidth=2.5, linestyle='-')
+                            else:
+                                # 其他曲线使用不同颜色
+                                line, = self.axes.plot(valid_wavelength, valid_reflectance,
+                                              label=label, color=colors[i % len(colors)],
+                                              linewidth=1.5)
+
+                            # 保存线条引用
+                            self.canvas.lines.append(line)
+                        except Exception as curve_error:
+                            print(f"绘制曲线 {label} 时出错: {curve_error}")
+                            # 继续处理下一条曲线，不中断整个绘图过程
+
+                    # 设置坐标轴标签和标题
+                    self.axes.set_xlabel('波长 (nm)')
+                    self.axes.set_ylabel('反射率 (%)')
+                    self.axes.set_title("反射率光谱对比图")
+
+                    # 显示网格
+                    self.axes.grid(True, linestyle='--', alpha=0.7)
+
+                    # 创建图例
+                    if len(self.canvas.lines) > 0:  # 确保有曲线被成功绘制
+                        try:
+                            legend = self.axes.legend(loc='best', fontsize='medium', frameon=True)
+                            # 保存图例中的线条引用
+                            self.canvas.legend_lines = legend.get_lines()
+                        except Exception as legend_error:
+                            print(f"创建图例时出错: {legend_error}")
+                            # 图例创建失败不影响主图显示
+                            self.canvas.legend_lines = []
+
+                    # 重绘画布
+                    try:
+                        self.canvas.draw()
+                    except Exception as draw_error:
+                        print(f"绘制画布时出错: {draw_error}")
+                        raise  # 重新抛出异常，因为画布绘制失败是严重错误
+
+                    # 如果有波长标记，重新添加
+                    if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
+                        try:
+                            wavelengths = []
+                            for i in range(self.wavelength_list.count()):
+                                wavelengths.append(float(self.wavelength_list.item(i).text()))
+
+                            if wavelengths:
+                                # 为每个波长添加垂直参考线
+                                self.canvas.wavelength_vlines = []
+                                for wl in wavelengths:
+                                    vline = self.axes.axvline(x=wl, color='gray', linestyle='--', alpha=0.5)
+                                    self.canvas.wavelength_vlines.append(vline)
+
+                                # 重绘画布
+                                self.canvas.draw()
+                        except Exception as wl_error:
+                            print(f"添加波长标记时出错: {wl_error}")
+                            # 波长标记添加失败不影响主图显示
+            except Exception as e:
+                print(f"绘图过程中出错: {e}")
+                import traceback
+                traceback.print_exc()
+                QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
+        except Exception as outer_e:
+            print(f"更新图表时出现严重错误: {outer_e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "严重绘图错误",
+                               f"更新图表时出现严重错误: {str(outer_e)}")
 
     def on_grid_changed(self, state):
         """处理网格显示状态改变"""
@@ -2483,14 +2771,27 @@ class SpectralViewer(QMainWindow):
         self.canvas._show_grid = is_checked
 
         # 强制清除当前网格
-        self.canvas.axes.grid(False)
+        self.axes.grid(False)
 
         # 如果需要显示网格，则重新绘制网格
         if is_checked:
-            self.canvas.axes.grid(True, linestyle='--', alpha=0.7)
+            self.axes.grid(True, linestyle='--', alpha=0.7)
 
         # 重绘画布
         self.canvas.draw()
+
+    def reset_view(self):
+        """重置图表视图"""
+        if hasattr(self, 'axes') and hasattr(self, 'canvas'):
+            self.axes.autoscale(True)
+            self.axes.relim()
+            self.axes.autoscale_view()
+            self.canvas.draw()
+
+            # 更新原始视图范围
+            if hasattr(self.canvas, '_original_xlim') and hasattr(self.canvas, '_original_ylim'):
+                self.canvas._original_xlim = self.axes.get_xlim()
+                self.canvas._original_ylim = self.axes.get_ylim()
 
     def analyze_spectra(self):
         """分析光谱数据的差异并生成分析报告"""
@@ -2518,7 +2819,35 @@ class SpectralViewer(QMainWindow):
             result_html, markers_dict = self.perform_spectral_analysis(filtered_data)
 
             # 2. 在图表上标记关键点
-            self.canvas.add_analysis_markers(markers_dict)
+            try:
+                # 标记样式
+                marker_styles = ['o', 's', '^', 'v', 'D', '*']
+
+                for line_idx, markers in markers_dict.items():
+                    if line_idx < len(self.canvas.lines):
+                        line = self.canvas.lines[line_idx]
+                        line_color = line.get_color()
+
+                        for i, (x, y, _, text) in enumerate(markers):
+                            # 选择标记样式
+                            marker_style = marker_styles[i % len(marker_styles)]
+
+                            # 绘制标记点
+                            self.axes.plot(x, y, marker=marker_style, markersize=8,
+                                  markerfacecolor='none', markeredgecolor=line_color,
+                                  markeredgewidth=2)
+
+                            # 添加标注文本
+                            if text:
+                                self.axes.annotate(text, xy=(x, y), xytext=(10, 10),
+                                          textcoords='offset points', color=line_color,
+                                          fontsize=9, fontweight='bold',
+                                          arrowprops=dict(arrowstyle='->', color=line_color))
+
+                # 重绘画布
+                self.canvas.draw()
+            except Exception as e:
+                print(f"标记关键点时出错: {str(e)}")
 
             # 3. 显示分析结果对话框
             result_dialog = AnalysisResultDialog(self)
@@ -3326,52 +3655,67 @@ class SpectralViewer(QMainWindow):
 
     def load_csv_file(self):
         """加载单个CSV文件并解析数据"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择CSV文件",
-            QDir.currentPath(),
-            "CSV文件 (*.csv);;所有文件 (*)"
-        )
-
-        if not file_path:
-            return
-
         try:
-            # 读取文件
-            wavelength, reflectance = self.read_spectral_data(file_path)
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "选择CSV文件",
+                QDir.currentPath(),
+                "CSV文件 (*.csv);;所有文件 (*)"
+            )
 
-            # 生成显示标签（使用文件名）
-            file_name = os.path.basename(file_path)
-            display_label = file_name
+            if not file_path:
+                return
 
-            # 检查是否已经加载相同名称的文件
-            count = 0
-            base_label = display_label
-            while display_label in self.spectra_data:
-                count += 1
-                display_label = f"{base_label} ({count})"
+            try:
+                # 读取文件
+                wavelength, reflectance = self.read_spectral_data(file_path)
 
-            # 存储数据
-            self.spectra_data[display_label] = (wavelength, reflectance)
+                # 生成显示标签（使用文件名）
+                file_name = os.path.basename(file_path)
+                display_label = file_name
 
-            # 添加到列表显示
-            self.file_list.addItem(display_label)
+                # 检查是否已经加载相同名称的文件
+                count = 0
+                base_label = display_label
+                while display_label in self.spectra_data:
+                    count += 1
+                    display_label = f"{base_label} ({count})"
 
-            # 启用按钮
-            self.reload_btn.setEnabled(True)
-            self.clear_btn.setEnabled(True)
-            self.analyze_btn.setEnabled(True)
+                # 存储数据
+                self.spectra_data[display_label] = (wavelength, reflectance)
 
-            # 显示成功消息
-            QMessageBox.information(self, "数据加载完成",
-                                  f"已加载CSV文件: {file_name}")
+                # 添加到列表显示
+                self.file_list.addItem(display_label)
 
-            # 自动更新图表
-            self.update_plot()
+                # 启用按钮
+                self.reload_btn.setEnabled(True)
+                self.clear_btn.setEnabled(True)
+                self.analyze_btn.setEnabled(True)
 
+                # 显示成功消息
+                QMessageBox.information(self, "数据加载完成",
+                                      f"已加载CSV文件: {file_name}")
+
+                # 自动更新图表
+                try:
+                    self.update_plot()
+                except Exception as e:
+                    print(f"更新图表时出错: {e}")
+                    QMessageBox.warning(self, "图表更新错误",
+                                      f"数据已加载，但更新图表时出错: {str(e)}")
+
+            except Exception as e:
+                print(f"无法加载文件 {file_path}: {e}")
+                import traceback
+                traceback.print_exc()
+                QMessageBox.critical(self, "加载错误",
+                                    f"无法加载文件 {file_path}:\n{str(e)}")
         except Exception as e:
-            QMessageBox.critical(self, "加载错误",
-                                f"无法加载文件 {file_path}:\n{str(e)}")
+            print(f"选择文件对话框出错: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "对话框错误",
+                               f"打开文件选择对话框时出错: {str(e)}")
 
     def set_reference_curve(self, curve_name):
         """设置指定曲线为标准曲线
@@ -3504,46 +3848,82 @@ class SpectralViewer(QMainWindow):
             return
 
         # 先清除现有标记
-        self.canvas.clear_wavelength_markers()
+        if hasattr(self.canvas, 'wavelength_vlines'):
+            for vline in self.canvas.wavelength_vlines:
+                vline.remove()
+            self.canvas.wavelength_vlines = []
+        else:
+            self.canvas.wavelength_vlines = []
 
         # 添加新标记
-        self.canvas.add_wavelength_markers(wavelengths)
+        for wl in wavelengths:
+            vline = self.axes.axvline(x=wl, color='gray', linestyle='--', alpha=0.5)
+            self.canvas.wavelength_vlines.append(vline)
+
+        # 重绘画布
+        self.canvas.draw()
 
     def clear_wavelength_marks(self):
         """清除所有波长标记"""
-        self.canvas.clear_wavelength_markers()
+        if hasattr(self.canvas, 'wavelength_vlines'):
+            for vline in self.canvas.wavelength_vlines:
+                vline.remove()
+            self.canvas.wavelength_vlines = []
+
+            # 重绘画布
+            self.canvas.draw()
 
 
 if __name__ == '__main__':
-    # 确保高DPI显示正常
-    if hasattr(Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
-    if hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+    # 将输出重定向到文件
+    import sys
+    sys.stdout = open('debug_output.txt', 'w')
+    sys.stderr = open('error_output.txt', 'w')
 
-    app = QApplication(sys.argv)
+    try:
+        print("程序开始运行...")
 
-    # 设置应用程序级别的字体
-    font = QFont("Microsoft YaHei")
-    app.setFont(font)
+        # 确保高DPI显示正常 - PySide6中这些设置已经默认启用
+        # 不再需要显式设置这些属性
 
-    # 使用Fusion风格，这在Windows平台上通常能确保正确显示窗口装饰
-    app.setStyle('fusion')
+        app = QApplication(sys.argv)
+        print("QApplication 创建成功")
 
-    # 创建主窗口
-    window = SpectralViewer()
+        # 设置应用程序级别的字体
+        font = QFont("Microsoft YaHei")
+        app.setFont(font)
+        print("应用程序字体设置成功")
 
-    # 重置窗口标志为默认值
-    window.setWindowFlags(Qt.WindowType.Window)
+        # 使用Fusion风格，这在Windows平台上通常能确保正确显示窗口装饰
+        app.setStyle('fusion')
+        print("应用程序风格设置成功")
 
-    # 确保窗口以正常状态显示
-    window.setWindowState(Qt.WindowState.WindowNoState)
+        # 创建主窗口
+        print("开始创建主窗口...")
+        window = SpectralViewer()
+        print("主窗口创建成功")
 
-    # 显示窗口
-    window.show()
+        # 重置窗口标志为默认值
+        window.setWindowFlags(Qt.WindowType.Window)
+        print("窗口标志设置成功")
 
-    # 将窗口提升到前台
-    window.raise_()
-    window.activateWindow()
+        # 确保窗口以正常状态显示
+        window.setWindowState(Qt.WindowState.WindowNoState)
+        print("窗口状态设置成功")
 
-    sys.exit(app.exec())
+        # 显示窗口
+        print("开始显示窗口...")
+        window.show()
+        print("窗口显示成功")
+
+        # 将窗口提升到前台
+        window.raise_()
+        window.activateWindow()
+        print("窗口激活成功")
+
+        print("开始进入事件循环...")
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"程序启动时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
