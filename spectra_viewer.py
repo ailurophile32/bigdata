@@ -2084,16 +2084,18 @@ class SpectralViewer(QMainWindow):
         plot_control_layout.addWidget(self.grid_cb)
 
         # 添加波长范围设置
-        range_layout = QGridLayout()
-        range_layout.addWidget(QLabel("波长范围:"), 0, 0)
-        range_layout.addWidget(QLabel("从"), 1, 0)
+        range_layout = QHBoxLayout()
+        range_layout.setSpacing(5)  # 设置较小的间距使控件紧凑排列
+        range_layout.addWidget(QLabel("波长范围:"))
+        range_layout.addWidget(QLabel("从"))
         self.wl_min = QComboBox()
         self.wl_min.addItems(["350", "400", "450", "500", "550", "600", "650", "700", "750", "800"])
-        range_layout.addWidget(self.wl_min, 1, 1)
-        range_layout.addWidget(QLabel("到"), 1, 2)
+        range_layout.addWidget(self.wl_min)
+        range_layout.addWidget(QLabel("到"))
         self.wl_max = QComboBox()
         self.wl_max.addItems(["1020", "950", "900", "850", "800", "750", "700", "650", "600"])
-        range_layout.addWidget(self.wl_max, 1, 3)
+        range_layout.addWidget(self.wl_max)
+        range_layout.addStretch(1)  # 添加弹性空间使组件左对齐
         self.wl_min.currentTextChanged.connect(self.update_plot)
         self.wl_max.currentTextChanged.connect(self.update_plot)
 
