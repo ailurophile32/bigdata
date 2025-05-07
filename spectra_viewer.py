@@ -13,24 +13,11 @@ matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 
-# 创建一个简单的自定义工具栏，而不是使用NavigationToolbar2QT
+
 from PySide6.QtWidgets import QToolBar
 from PySide6.QtGui import QIcon, QAction
 
-def create_toolbar(canvas, parent):
-    """创建一个完整的导航工具栏，使用NavigationToolbar2QT"""
-    # 使用matplotlib的标准导航工具栏
-    # 检查canvas是否为SpectralCanvas类型或FigureCanvas类型
-    if hasattr(canvas, 'canvas'):
-        # 如果是SpectralCanvas类型，它有canvas属性
-        toolbar = NavigationToolbar2QT(canvas.canvas, parent)
-    else:
-        # 如果是FigureCanvas类型，直接使用它
-        toolbar = NavigationToolbar2QT(canvas, parent)
 
-    # 不再添加"重置视图"和"切换网格"按钮，按照用户要求
-
-    return toolbar
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QFileDialog,
                             QListWidget, QSplitter, QCheckBox, QComboBox,
@@ -57,6 +44,21 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'KaiTi', 'FangSo
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 matplotlib.rcParams['font.family'] = 'sans-serif'
 
+# 创建一个简单的自定义工具栏，而不是使用NavigationToolbar2QT
+def create_toolbar(canvas, parent):
+    """创建一个完整的导航工具栏，使用NavigationToolbar2QT"""
+    # 使用matplotlib的标准导航工具栏
+    # 检查canvas是否为SpectralCanvas类型或FigureCanvas类型
+    if hasattr(canvas, 'canvas'):
+        # 如果是SpectralCanvas类型，它有canvas属性
+        toolbar = NavigationToolbar2QT(canvas.canvas, parent)
+    else:
+        # 如果是FigureCanvas类型，直接使用它
+        toolbar = NavigationToolbar2QT(canvas, parent)
+
+    # 不再添加"重置视图"和"切换网格"按钮，按照用户要求
+
+    return toolbar
 
 class BaseAnalysisDialog(QDialog):
     """分析对话框的基类"""
@@ -1059,6 +1061,10 @@ class SpectralCanvas(QWidget):
         # 创建FigureCanvas
         self.canvas = FigureCanvas(self.fig)
 
+        # 确保FigureCanvas能够接收鼠标事件
+        self.canvas.setFocusPolicy(Qt.StrongFocus)
+        self.canvas.setMouseTracking(True)
+
         # 将FigureCanvas添加到布局
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1083,6 +1089,9 @@ class SpectralCanvas(QWidget):
         # 启用鼠标跟踪，以便接收鼠标事件
         self.setMouseTracking(True)
 
+        # 安装事件过滤器，以便捕获FigureCanvas上的事件
+        self.canvas.installEventFilter(self)
+
         # 初始化绘图相关的属性
         self.lines = []  # 存储所有曲线
         self.legend_lines = []  # 图例中的线条
@@ -1098,6 +1107,7 @@ class SpectralCanvas(QWidget):
         self._pan_start_y = 0
         self._pan_start_xlim = None
         self._pan_start_ylim = None
+        self._current_wavelengths = []  # 用于存储当前波长标记，在拖动过程中使用
 
         # 启用交互性支持
         # 这些连接使得我们能够对图中的对象进行交互式操作
@@ -1318,68 +1328,9 @@ class SpectralCanvas(QWidget):
         self.reset_view()
 
     def wheelEvent(self, event):
-        # 检查是否按下了Ctrl键
-        if event.modifiers() & Qt.ControlModifier:
-            # 获取原始鼠标位置
-            pos = event.pos()
-
-            # 获取鼠标位置对应的数据坐标（重要：必须使用正确的坐标变换）
-            ax = self.axes
-            width, height = self.canvas.get_width_height()
-            x_pos = pos.x() / width
-            y_pos = (height - pos.y()) / height  # 注意Y轴方向
-
-            # 获取当前视图范围
-            xmin, xmax = ax.get_xlim()
-            ymin, ymax = ax.get_ylim()
-
-            # 计算鼠标所指向的数据点坐标
-            data_x = xmin + (xmax - xmin) * x_pos
-            data_y = ymin + (ymax - ymin) * y_pos
-
-            # 计算缩放系数
-            base_scale = 1.2
-
-            # 根据滚轮方向确定缩放方向
-            if event.angleDelta().y() > 0:
-                # 放大
-                scale_factor = 1.0 / base_scale
-            else:
-                # 缩小
-                scale_factor = base_scale
-
-            # 计算新的数据范围
-            new_width = (xmax - xmin) * scale_factor
-            new_height = (ymax - ymin) * scale_factor
-
-            # 计算新的坐标范围，确保鼠标位置指向的数据点保持不变
-            new_xmin = data_x - x_pos * new_width
-            new_ymin = data_y - y_pos * new_height
-
-            # 设置新的坐标范围
-            ax.set_xlim(new_xmin, new_xmin + new_width)
-            ax.set_ylim(new_ymin, new_ymin + new_height)
-
-            # 保存当前的波长标记，以便在缩放后更新
-            wavelengths = []
-            if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
-                # 从垂直线获取波长值
-                for vline in self.wavelength_vlines:
-                    wavelengths.append(vline.get_xdata()[0])
-
-            # 如果有波长标记，先清除再重新添加
-            if wavelengths:
-                self.clear_wavelength_markers()
-                self.add_wavelength_markers(wavelengths)
-
-            # 使用draw_idle()进行延迟绘制，提高性能
-            self.canvas.draw_idle()
-
-            # 标记事件已处理
-            event.accept()
-        else:
-            # 调用父类方法处理默认行为
-            super().wheelEvent(event)
+        """处理鼠标滚轮事件 - 仅用于SpectralCanvas本身，不处理FigureCanvas上的事件"""
+        # 这个方法现在由eventFilter处理，但我们保留它以防有其他地方调用
+        super().wheelEvent(event)
 
     def on_scroll(self, event):
         """处理matplotlib的滚轮事件（已废弃，改用Qt的wheelEvent）"""
@@ -1844,9 +1795,156 @@ class SpectralCanvas(QWidget):
 
         self.canvas.draw()
 
+    def eventFilter(self, obj, event):
+        """事件过滤器，用于处理FigureCanvas上的事件"""
+        if obj == self.canvas:
+            # 处理鼠标按下事件
+            if event.type() == event.Type.MouseButtonPress:
+                # 检查是否是Ctrl+左键（用于拖拽）或中键
+                if (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.ControlModifier) or \
+                   event.button() == Qt.MouseButton.MiddleButton:
+                    # 启用拖动模式
+                    self._pan_enabled = True
+                    self._pan_start_x = event.pos().x()
+                    self._pan_start_y = event.pos().y()
+                    self._pan_start_xlim = self.axes.get_xlim()
+                    self._pan_start_ylim = self.axes.get_ylim()
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)  # 修改鼠标指针为抓取手形
+                    return True  # 事件已处理
+
+            # 处理鼠标释放事件
+            elif event.type() == event.Type.MouseButtonRelease:
+                if ((event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.ControlModifier) or
+                    event.button() == Qt.MouseButton.MiddleButton) and self._pan_enabled:
+                    # 禁用拖动模式
+                    self._pan_enabled = False
+                    self.setCursor(Qt.CursorShape.ArrowCursor)  # 恢复默认指针
+
+                    # 在拖动结束时更新波长标记
+                    if hasattr(self, '_current_wavelengths') and self._current_wavelengths:
+                        self.clear_wavelength_markers()
+                        self.add_wavelength_markers(self._current_wavelengths)
+                        self.canvas.draw_idle()
+
+                    return True  # 事件已处理
+
+            # 处理鼠标移动事件
+            elif event.type() == event.Type.MouseMove:
+                if self._pan_enabled:
+                    # 计算鼠标移动的距离
+                    dx = event.pos().x() - self._pan_start_x
+                    dy = event.pos().y() - self._pan_start_y
+
+                    # 如果移动距离太小，忽略以提高性能
+                    if abs(dx) < 1 and abs(dy) < 1:
+                        return True
+
+                    # 获取当前视图范围
+                    xmin, xmax = self.axes.get_xlim()
+                    ymin, ymax = self.axes.get_ylim()
+
+                    # 计算数据坐标的移动距离
+                    width, height = self.canvas.get_width_height()
+                    dx_data = (xmax - xmin) * dx / width
+                    dy_data = (ymax - ymin) * dy / height
+
+                    # 更新视图范围
+                    self.axes.set_xlim(xmin - dx_data, xmax - dx_data)
+                    self.axes.set_ylim(ymin + dy_data, ymax + dy_data)
+
+                    # 更新起始位置
+                    self._pan_start_x = event.pos().x()
+                    self._pan_start_y = event.pos().y()
+
+                    # 更新波长标记 - 使用延迟更新策略提高性能
+                    self._current_wavelengths = []
+                    if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
+                        for vline in self.wavelength_vlines:
+                            self._current_wavelengths.append(vline.get_xdata()[0])
+
+                    # 使用draw_idle()进行延迟绘制，提高性能
+                    self.canvas.draw_idle()
+                    return True  # 事件已处理
+
+            # 处理鼠标滚轮事件
+            elif event.type() == event.Type.Wheel:
+                # 检查是否按下了Ctrl键
+                if event.modifiers() & Qt.ControlModifier:
+                    try:
+                        # 获取原始鼠标位置
+                        pos = event.position()
+
+                        # 获取画布尺寸
+                        width = self.canvas.width()
+                        height = self.canvas.height()
+
+                        # 确保宽度和高度有效
+                        if width <= 0 or height <= 0:
+                            return False
+
+                        # 计算鼠标位置在画布中的相对位置
+                        x_pos = pos.x() / width
+                        y_pos = (height - pos.y()) / height  # 注意Y轴方向是反的
+
+                        # 获取当前视图范围
+                        ax = self.axes
+                        xmin, xmax = ax.get_xlim()
+                        ymin, ymax = ax.get_ylim()
+
+                        # 计算鼠标所指向的数据点坐标
+                        data_x = xmin + (xmax - xmin) * x_pos
+                        data_y = ymin + (ymax - ymin) * y_pos
+
+                        # 计算缩放系数 - 调整为更平滑的缩放体验
+                        base_scale = 1.15  # 稍微减小缩放步长，使缩放更平滑
+
+                        # 根据滚轮方向确定缩放方向
+                        if event.angleDelta().y() > 0:
+                            # 放大
+                            scale_factor = 1.0 / base_scale
+                        else:
+                            # 缩小
+                            scale_factor = base_scale
+
+                        # 计算新的数据范围
+                        new_width = (xmax - xmin) * scale_factor
+                        new_height = (ymax - ymin) * scale_factor
+
+                        # 计算新的坐标范围，确保鼠标位置指向的数据点保持不变
+                        new_xmin = data_x - x_pos * new_width
+                        new_xmin = max(new_xmin, 0)  # 防止x轴范围小于0
+                        new_ymin = data_y - y_pos * new_height
+
+                        # 设置新的坐标范围
+                        ax.set_xlim(new_xmin, new_xmin + new_width)
+                        ax.set_ylim(new_ymin, new_ymin + new_height)
+
+                        # 保存当前的波长标记，以便在缩放后更新
+                        wavelengths = []
+                        if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
+                            # 从垂直线获取波长值
+                            for vline in self.wavelength_vlines:
+                                wavelengths.append(vline.get_xdata()[0])
+
+                        # 如果有波长标记，先清除再重新添加
+                        if wavelengths:
+                            self.clear_wavelength_markers()
+                            self.add_wavelength_markers(wavelengths)
+
+                        # 使用draw_idle()进行延迟绘制，提高性能
+                        self.canvas.draw_idle()
+                        return True  # 事件已处理
+                    except Exception as e:
+                        print(f"缩放出错: {e}")
+
+        # 如果事件未处理，则调用父类方法
+        return super().eventFilter(obj, event)
+
     def mousePressEvent(self, event):
-        """处理鼠标按下事件"""
-        if event.button() == Qt.MouseButton.MiddleButton:
+        """处理鼠标按下事件 - 仅用于SpectralCanvas本身，不处理FigureCanvas上的事件"""
+        # 检查是否是Ctrl+左键（用于拖拽）或中键
+        if (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.ControlModifier) or \
+           event.button() == Qt.MouseButton.MiddleButton:
             # 启用拖动模式
             self._pan_enabled = True
             self._pan_start_x = event.x()
@@ -1859,99 +1957,14 @@ class SpectralCanvas(QWidget):
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        """处理鼠标释放事件"""
-        if event.button() == Qt.MouseButton.MiddleButton and self._pan_enabled:
-            # 禁用拖动模式
-            self._pan_enabled = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)  # 恢复默认指针
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)
+        """处理鼠标释放事件 - 仅用于SpectralCanvas本身，不处理FigureCanvas上的事件"""
+        # 这个方法现在由eventFilter处理，但我们保留它以防有其他地方调用
+        super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
-        """处理鼠标移动事件"""
-        if self._pan_enabled:
-            # 计算鼠标移动的距离
-            dx = event.x() - self._pan_start_x
-            dy = event.y() - self._pan_start_y
-
-            # 获取当前视图范围
-            xmin, xmax = self.axes.get_xlim()
-            ymin, ymax = self.axes.get_ylim()
-
-            # 计算数据坐标的移动距离
-            width, height = self.canvas.get_width_height()
-            dx_data = (xmax - xmin) * dx / width
-            dy_data = (ymax - ymin) * dy / height
-
-            # 更新视图范围
-            self.axes.set_xlim(xmin - dx_data, xmax - dx_data)
-            self.axes.set_ylim(ymin + dy_data, ymax + dy_data)
-
-            # 更新起始位置
-            self._pan_start_x = event.x()
-            self._pan_start_y = event.y()
-
-            # 更新波长标记
-            wavelengths = []
-            if hasattr(self, 'wavelength_vlines') and self.wavelength_vlines:
-                for vline in self.wavelength_vlines:
-                    wavelengths.append(vline.get_xdata()[0])
-
-            if wavelengths:
-                self.clear_wavelength_markers()
-                self.add_wavelength_markers(wavelengths)
-
-            # 重绘画布
-            self.canvas.draw_idle()
-        else:
-            # 处理鼠标悬停事件
-            # 将Qt坐标转换为matplotlib坐标
-            pos = event.pos()
-            width, height = self.canvas.get_width_height()
-            x_pos = pos.x() / width
-            y_pos = (height - pos.y()) / height  # 注意Y轴方向
-
-            # 获取当前视图范围
-            xmin, xmax = self.axes.get_xlim()
-            ymin, ymax = self.axes.get_ylim()
-
-            # 计算鼠标所指向的数据点坐标
-            x = xmin + (xmax - xmin) * x_pos
-            y = ymin + (ymax - ymin) * y_pos
-
-            closest_line = None
-            min_distance = float('inf')
-
-            # 找到最近的线条
-            for line in self.lines:
-                if not line.get_visible():
-                    continue
-
-                # 获取线条数据
-                xdata = line.get_xdata()
-                ydata = line.get_ydata()
-
-                # 找到最近的点
-                distances = []
-                for xi, yi in zip(xdata, ydata):
-                    # 计算欧几里德距离
-                    dist = np.sqrt((x - xi)**2 + (y - yi)**2)
-                    distances.append(dist)
-
-                if distances:
-                    min_dist = min(distances)
-                    if min_dist < min_distance:
-                        min_distance = min_dist
-                        closest_line = line
-
-            # 设置阈值，确定是否足够近
-            threshold = (xmax - xmin) * 0.02
-
-            if min_distance < threshold:
-                self.update_highlight(closest_line)
-            else:
-                self.update_highlight(None)
+        """处理鼠标移动事件 - 仅用于SpectralCanvas本身，不处理FigureCanvas上的事件"""
+        # 这个方法现在由eventFilter处理，但我们保留它以防有其他地方调用
+        super().mouseMoveEvent(event)
 
 
 class SpectralViewer(QMainWindow):
@@ -2148,7 +2161,7 @@ class SpectralViewer(QMainWindow):
         plot_control_layout = QVBoxLayout()
 
         # 添加交互提示
-        interaction_label = QLabel("交互提示：\n· 点击图例可显示/隐藏对应曲线\n· 鼠标移动到曲线上将高亮显示\n· 右键点击文件名可移除数据")
+        interaction_label = QLabel("交互提示：\n· 点击图例可显示/隐藏对应曲线\n· 鼠标移动到曲线上将高亮显示\n· 右键点击文件名可移除数据\n· 使用Ctrl+鼠标左键拖拽可移动图表\n· 使用Ctrl+鼠标滚轮可缩放图表")
         plot_control_layout.addWidget(interaction_label)
 
         # 添加其他控制选项
@@ -3696,15 +3709,11 @@ class SpectralViewer(QMainWindow):
 
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
+    app = QApplication([])
 
     # 设置应用程序级别的字体
     font = QFont("Microsoft YaHei")
     app.setFont(font)
-
-    # PySide6 不需要显式设置编码，已自动支持UTF-8
-
-    app.setStyle('Fusion')  # 使用Fusion风格，在不同平台上看起来一致
 
     window = SpectralViewer()
     window.show()
