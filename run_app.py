@@ -2,8 +2,11 @@ import sys
 import traceback
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QStyleFactory
     app = QApplication(sys.argv)
+
+    # 设置应用程序使用Fusion主题
+    app.setStyle(QStyleFactory.create("Fusion"))
     
     # 导入主程序
     from spectra_viewer import SpectralViewer
