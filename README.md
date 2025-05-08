@@ -63,4 +63,4 @@ python spectra_viewer.py
 
 ## 许可证
 
-MIT 许可证
+闭源
