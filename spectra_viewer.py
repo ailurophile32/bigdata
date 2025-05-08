@@ -1977,6 +1977,7 @@ class SpectralViewer(QMainWindow):
         self.base_folder = ""   # 基础文件夹路径
         self.grid_visible = True  # 添加网格状态跟踪
         self.reference_curve = None  # 存储标准曲线的名称
+        self.detail_btn = None  # 查看详细结果按钮
 
         self.initUI()
 
@@ -2161,6 +2162,15 @@ class SpectralViewer(QMainWindow):
         # 添加一些顶部间距
         wavelength_layout.addSpacing(5)
         wavelength_layout.addLayout(btn_layout)
+
+        # 添加波长点分析结果显示区域
+        wavelength_layout.addSpacing(5)
+        wavelength_layout.addWidget(QLabel("波长点反射率分析结果:"))
+        self.wavelength_analysis_result = QTextEdit()
+        self.wavelength_analysis_result.setReadOnly(True)
+        self.wavelength_analysis_result.setMaximumHeight(150)
+        self.wavelength_analysis_result.setStyleSheet("font-family: monospace;")
+        wavelength_layout.addWidget(self.wavelength_analysis_result)
 
         # 应用布局
         wavelength_group.setLayout(wavelength_layout)
@@ -3550,7 +3560,7 @@ class SpectralViewer(QMainWindow):
         self.wavelength_list.clear()
 
     def mark_selected_wavelengths(self):
-        """标记所有选择的波长"""
+        """标记所有选择的波长，并分析不同曲线在这些波长点的反射率值"""
         if not self.spectra_data:
             QMessageBox.warning(self, "无数据", "请先加载光谱数据")
             return
@@ -3569,10 +3579,439 @@ class SpectralViewer(QMainWindow):
 
         # 添加新标记
         self.canvas.add_wavelength_markers(wavelengths)
+        
+        # 获取当前可见的曲线
+        visible_lines = []
+        visible_labels = []
+        for i, line in enumerate(self.canvas.lines):
+            if line.get_visible():
+                visible_lines.append(line)
+                visible_labels.append(line.get_label())
+        
+        if len(visible_lines) < 1:
+            self.wavelength_analysis_result.setHtml("<p style='color:red'>无可见曲线，无法分析</p>")
+            return
+            
+        # 执行波长点反射率分析
+        analysis_results = self.analyze_wavelength_points(wavelengths, visible_lines, visible_labels)
+        
+        # 创建简化版结果显示在小窗口中
+        simplified_results = self.get_simplified_analysis(wavelengths, visible_lines, visible_labels)
+        self.wavelength_analysis_result.setHtml(simplified_results)
+        
+        # 添加查看详细结果按钮
+        if not hasattr(self, 'detail_btn') or self.detail_btn is None:
+            self.detail_btn = QPushButton("查看详细分析结果")
+            layout = self.wavelength_analysis_result.parentWidget().layout()
+            layout.addWidget(self.detail_btn)
+        
+        # 连接查看详细结果事件
+        self.detail_btn.clicked.disconnect() if hasattr(self.detail_btn, 'clicked') else None
+        self.detail_btn.clicked.connect(lambda: self.show_detailed_analysis(analysis_results))
+        
+    def analyze_wavelength_points(self, wavelengths, lines, labels):
+        """分析不同曲线在指定波长点的反射率值差异
+        
+        Args:
+            wavelengths: 波长点列表
+            lines: 曲线对象列表
+            labels: 曲线标签列表
+            
+        Returns:
+            HTML格式的分析结果
+        """
+        # 创建分析结果HTML
+        html_result = ""
+        
+        # 获取每条曲线在每个波长点的反射率值
+        wavelength_values = {}
+        
+        for wl in wavelengths:
+            wavelength_values[wl] = {}
+            
+            for i, line in enumerate(lines):
+                label = labels[i]
+                
+                # 获取曲线数据
+                x_data = line.get_xdata()
+                y_data = line.get_ydata()
+                
+                # 找到最接近波长点的值
+                idx = np.abs(x_data - wl).argmin()
+                closest_wl = x_data[idx]
+                value = y_data[idx]
+                
+                # 判断找到的点与目标波长的接近程度
+                if abs(closest_wl - wl) <= 10:  # 允许10nm以内的误差
+                    wavelength_values[wl][label] = (value, closest_wl)
+        
+        # 生成波长点分析表格
+        html_result += "<style>table {width: 100%; border-collapse: collapse;} "
+        html_result += "th, td {border: 1px solid #ddd; padding: 4px; text-align: right;} "
+        html_result += "th {background-color: #f2f2f2;} "
+        html_result += ".diff-positive {color: green;} .diff-negative {color: red;}</style>"
+        
+        # 为每个波长点创建一个表格
+        for wl in wavelengths:
+            html_result += f"<h4>波长: {wl:.1f}nm 反射率比对</h4>"
+            
+            # 检查是否有有效数据
+            if not wavelength_values[wl]:
+                html_result += "<p>在此波长附近无有效数据点</p>"
+                continue
+                
+            # 创建表格
+            html_result += "<table>"
+            html_result += "<tr><th>曲线名称</th><th>实际波长(nm)</th><th>反射率(%)</th>"
+            
+            # 如果有多条曲线，添加差值列
+            if len(wavelength_values[wl]) > 1:
+                html_result += "<th>与平均值差异</th>"
+                
+                # 计算平均反射率
+                avg_value = np.mean([value for value, _ in wavelength_values[wl].values()])
+                
+                # 添加表头行结束标签
+                html_result += "</tr>"
+                
+                # 添加每条曲线的数据行
+                for label, (value, actual_wl) in wavelength_values[wl].items():
+                    diff = value - avg_value
+                    diff_class = "diff-positive" if diff >= 0 else "diff-negative"
+                    
+                    html_result += f"<tr><td>{label}</td><td>{actual_wl:.2f}</td><td>{value:.2f}</td>"
+                    html_result += f"<td class='{diff_class}'>{diff:+.2f}</td></tr>"
+                    
+                # 添加平均值行
+                html_result += f"<tr><td colspan='2'><b>平均值</b></td><td><b>{avg_value:.2f}</b></td><td>-</td></tr>"
+            else:
+                # 只有一条曲线，不显示差异
+                html_result += "</tr>"
+                
+                # 添加单条曲线的数据行
+                label, (value, actual_wl) = list(wavelength_values[wl].items())[0]
+                html_result += f"<tr><td>{label}</td><td>{actual_wl:.2f}</td><td>{value:.2f}</td></tr>"
+            
+            html_result += "</table>"
+            
+            # 如果有多条曲线，添加曲线间两两比对
+            if len(wavelength_values[wl]) > 1:
+                labels_list = list(wavelength_values[wl].keys())
+                
+                html_result += "<h5>曲线间差异比对</h5>"
+                html_result += "<table><tr><th>曲线对比</th><th>反射率差异(%)</th><th>相对差异(%)</th></tr>"
+                
+                for i in range(len(labels_list)):
+                    for j in range(i+1, len(labels_list)):
+                        label1 = labels_list[i]
+                        label2 = labels_list[j]
+                        
+                        value1, _ = wavelength_values[wl][label1]
+                        value2, _ = wavelength_values[wl][label2]
+                        
+                        abs_diff = value1 - value2
+                        rel_diff = abs_diff / value2 * 100 if value2 != 0 else 0
+                        
+                        diff_class = "diff-positive" if abs_diff >= 0 else "diff-negative"
+                        
+                        html_result += f"<tr><td>{label1} vs {label2}</td>"
+                        html_result += f"<td class='{diff_class}'>{abs_diff:+.2f}</td>"
+                        html_result += f"<td class='{diff_class}'>{rel_diff:+.2f}%</td></tr>"
+                
+                html_result += "</table>"
+        
+        return html_result
 
     def clear_wavelength_marks(self):
-        """清除所有波长标记"""
+        """清除所有波长标记和分析结果"""
         self.canvas.clear_wavelength_markers()
+        # 清空分析结果显示
+        self.wavelength_analysis_result.clear()
+
+    def get_simplified_analysis(self, wavelengths, lines, labels):
+        """获取简化版的分析结果，适合在小空间显示
+        
+        Args:
+            wavelengths: 波长点列表
+            lines: 曲线对象列表
+            labels: 曲线标签列表
+            
+        Returns:
+            HTML格式的简化分析结果
+        """
+        # 创建分析结果HTML
+        html_result = ""
+        
+        # 获取每条曲线在每个波长点的反射率值
+        wavelength_values = {}
+        
+        for wl in wavelengths:
+            wavelength_values[wl] = {}
+            
+            for i, line in enumerate(lines):
+                label = labels[i]
+                
+                # 获取曲线数据
+                x_data = line.get_xdata()
+                y_data = line.get_ydata()
+                
+                # 找到最接近波长点的值
+                idx = np.abs(x_data - wl).argmin()
+                closest_wl = x_data[idx]
+                value = y_data[idx]
+                
+                # 判断找到的点与目标波长的接近程度
+                if abs(closest_wl - wl) <= 10:  # 允许10nm以内的误差
+                    wavelength_values[wl][label] = (value, closest_wl)
+        
+        # 生成波长点分析表格
+        html_result += "<style>table {width: 100%; border-collapse: collapse;} "
+        html_result += "th, td {border: 1px solid #ddd; padding: 2px; text-align: right; font-size: 9pt;} "
+        html_result += "th {background-color: #f2f2f2;} "
+        html_result += ".diff-positive {color: green;} .diff-negative {color: red;}</style>"
+        
+        # 添加简要说明
+        html_result += "<p style='font-size: 9pt;'><b>波长点反射率分析 (点击\"查看详细结果\"获取完整报告)</b></p>"
+        
+        # 为每个波长创建简化表格
+        for wl in wavelengths:
+            if not wavelength_values[wl]:
+                continue
+                
+            html_result += f"<p style='font-size: 9pt; margin: 2px 0;'><b>λ={wl:.1f}nm</b></p>"
+            html_result += "<table>"
+            html_result += "<tr><th>曲线</th><th>反射率(%)</th></tr>"
+            
+            # 只显示曲线名和反射率值
+            for label, (value, _) in wavelength_values[wl].items():
+                short_label = label[:15] + "..." if len(label) > 15 else label
+                html_result += f"<tr><td>{short_label}</td><td>{value:.2f}</td></tr>"
+                
+            html_result += "</table>"
+        
+        return html_result
+        
+    def show_detailed_analysis(self, analysis_html):
+        """显示详细分析结果对话框
+        
+        Args:
+            analysis_html: 完整的HTML分析结果
+        """
+        dialog = WavelengthAnalysisDialog(self)
+        dialog.set_html_content(analysis_html)
+        dialog.exec_()
+
+
+class WavelengthAnalysisDialog(BaseAnalysisDialog):
+    """波长点反射率分析结果对话框"""
+    
+    def __init__(self, parent=None, title="波长点反射率分析结果"):
+        super().__init__(parent, title)
+        
+        # 创建文本显示区域
+        self.result_text = QTextEdit()
+        self.result_text.setReadOnly(True)
+        self.result_text.setFont(QFont("Microsoft YaHei", 10))
+        
+        # 添加导出按钮
+        self.export_btn = QPushButton("导出结果")
+        self.export_btn.clicked.connect(self.export_results)
+        
+        # 创建按钮布局
+        button_layout = QHBoxLayout()
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.export_btn)
+        button_layout.addStretch(1)
+        
+        # 将组件添加到内容布局
+        self.content_layout.addWidget(self.result_text)
+        self.content_layout.addLayout(button_layout)
+        
+        # 设置窗口大小
+        self.resize(800, 600)
+    
+    def set_html_content(self, html):
+        """设置HTML内容"""
+        self.result_text.setHtml(html)
+        
+    def export_results(self):
+        """导出分析结果"""
+        try:
+            # 获取保存路径
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "保存分析结果", 
+                QDir.currentPath() + "/波长点分析结果.html",
+                "HTML文件 (*.html);;文本文件 (*.txt);;所有文件 (*)"
+            )
+            
+            if not file_path:
+                return
+                
+            # 根据文件扩展名选择格式
+            if file_path.lower().endswith('.html'):
+                # 保存为HTML
+                content = self.result_text.toHtml()
+            else:
+                # 保存为纯文本
+                content = self.result_text.toPlainText()
+                
+            # 写入文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+                
+            QMessageBox.information(self, "导出成功", f"分析结果已成功导出到 {file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "导出错误", f"导出分析结果时出错：{str(e)}")
+
+    def mark_selected_wavelengths(self):
+        """标记所有选择的波长，并分析不同曲线在这些波长点的反射率值"""
+        if not self.spectra_data:
+            QMessageBox.warning(self, "无数据", "请先加载光谱数据")
+            return
+
+        # 获取所有波长
+        wavelengths = []
+        for i in range(self.wavelength_list.count()):
+            wavelengths.append(float(self.wavelength_list.item(i).text()))
+
+        if not wavelengths:
+            QMessageBox.information(self, "未选择波长", "请先添加要标记的波长")
+            return
+
+        # 先清除现有标记
+        self.canvas.clear_wavelength_markers()
+
+        # 添加新标记
+        self.canvas.add_wavelength_markers(wavelengths)
+        
+        # 获取当前可见的曲线
+        visible_lines = []
+        visible_labels = []
+        for i, line in enumerate(self.canvas.lines):
+            if line.get_visible():
+                visible_lines.append(line)
+                visible_labels.append(line.get_label())
+        
+        if len(visible_lines) < 1:
+            self.wavelength_analysis_result.setHtml("<p style='color:red'>无可见曲线，无法分析</p>")
+            return
+            
+        # 执行波长点反射率分析
+        analysis_results = self.analyze_wavelength_points(wavelengths, visible_lines, visible_labels)
+        
+        # 在小结果框中显示简化版分析结果
+        simplified_results = self.get_simplified_analysis(wavelengths, visible_lines, visible_labels)
+        self.wavelength_analysis_result.setHtml(simplified_results)
+        
+        # 添加"查看详细结果"按钮到结果区域下方
+        result_area = self.wavelength_analysis_result.parentWidget()
+        
+        # 检查是否已存在按钮，避免重复添加
+        detail_btn_found = False
+        for child in result_area.findChildren(QPushButton):
+            if child.text() == "查看详细结果":
+                detail_btn_found = True
+                self.detail_btn = child
+                break
+                
+        if not detail_btn_found:
+            # 创建新按钮并添加到布局
+            self.detail_btn = QPushButton("查看详细结果")
+            self.detail_btn.clicked.connect(lambda: self.show_detailed_analysis(analysis_results))
+            # 获取结果区域的父布局
+            parent_layout = None
+            for layout in result_area.parent().findChildren(QVBoxLayout):
+                # 找到包含结果区域的布局
+                for i in range(layout.count()):
+                    if layout.itemAt(i).widget() == result_area:
+                        parent_layout = layout
+                        break
+            
+            if parent_layout:
+                # 在结果区域之后添加按钮
+                idx = parent_layout.indexOf(result_area) + 1
+                parent_layout.insertWidget(idx, self.detail_btn)
+        else:
+            # 更新现有按钮的点击事件
+            try:
+                self.detail_btn.clicked.disconnect()
+            except:
+                pass
+            self.detail_btn.clicked.connect(lambda: self.show_detailed_analysis(analysis_results))
+    
+    def get_simplified_analysis(self, wavelengths, lines, labels):
+        """获取简化版的分析结果，适合在小空间显示
+        
+        Args:
+            wavelengths: 波长点列表
+            lines: 曲线对象列表
+            labels: 曲线标签列表
+            
+        Returns:
+            HTML格式的简化分析结果
+        """
+        # 创建分析结果HTML
+        html_result = ""
+        
+        # 获取每条曲线在每个波长点的反射率值
+        wavelength_values = {}
+        
+        for wl in wavelengths:
+            wavelength_values[wl] = {}
+            
+            for i, line in enumerate(lines):
+                label = labels[i]
+                
+                # 获取曲线数据
+                x_data = line.get_xdata()
+                y_data = line.get_ydata()
+                
+                # 找到最接近波长点的值
+                idx = np.abs(x_data - wl).argmin()
+                closest_wl = x_data[idx]
+                value = y_data[idx]
+                
+                # 判断找到的点与目标波长的接近程度
+                if abs(closest_wl - wl) <= 10:  # 允许10nm以内的误差
+                    wavelength_values[wl][label] = (value, closest_wl)
+        
+        # 生成波长点分析表格
+        html_result += "<style>table {width: 100%; border-collapse: collapse;} "
+        html_result += "th, td {border: 1px solid #ddd; padding: 2px; text-align: right; font-size: 9pt;} "
+        html_result += "th {background-color: #f2f2f2;} "
+        html_result += ".diff-positive {color: green;} .diff-negative {color: red;}</style>"
+        
+        # 添加简要说明
+        html_result += "<p style='font-size: 9pt;'><b>波长点反射率分析 (点击\"查看详细结果\"获取完整报告)</b></p>"
+        
+        # 为每个波长创建简化表格
+        for wl in wavelengths:
+            if not wavelength_values[wl]:
+                continue
+                
+            html_result += f"<p style='font-size: 9pt; margin: 2px 0;'><b>λ={wl:.1f}nm</b></p>"
+            html_result += "<table>"
+            html_result += "<tr><th>曲线</th><th>反射率(%)</th></tr>"
+            
+            # 只显示曲线名和反射率值
+            for label, (value, _) in wavelength_values[wl].items():
+                short_label = label[:15] + "..." if len(label) > 15 else label
+                html_result += f"<tr><td>{short_label}</td><td>{value:.2f}</td></tr>"
+                
+            html_result += "</table>"
+        
+        return html_result
+        
+    def show_detailed_analysis(self, analysis_html):
+        """显示详细分析结果对话框
+        
+        Args:
+            analysis_html: 完整的HTML分析结果
+        """
+        dialog = WavelengthAnalysisDialog(self)
+        dialog.set_html_content(analysis_html)
+        dialog.exec_()
 
 
 if __name__ == '__main__':
