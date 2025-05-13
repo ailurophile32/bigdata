@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
                             QMenu, QTextEdit, QDialog, QTableWidget,
                             QTableWidgetItem, QTabWidget, QHeaderView,
-                            QLineEdit)
+                            QLineEdit, QListWidgetItem)
 from PySide6.QtCore import Qt, QDir, QPoint
 from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -1296,6 +1296,12 @@ class SpectralCanvas(QWidget):
                                bbox=dict(facecolor='white', alpha=0.7, edgecolor=region_color,
                                         boxstyle='round,pad=0.2', linewidth=1))
 
+        # 获取峰谷标记点显示状态
+        show_peakvalley = False
+        parent = self.parent()
+        if parent and hasattr(parent, 'peakvalley_cb'):
+            show_peakvalley = parent.peakvalley_cb.isChecked()
+
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
 
@@ -1318,11 +1324,30 @@ class SpectralCanvas(QWidget):
             # 绘制曲线，保存线条引用，并设置pickradius使曲线更容易被选中
             line, = self.axes.plot(wavelength[mask], reflectance[mask],
                                   label=label, color=colors[i],
-                                  linewidth=1.5, picker=5)
+                                  linewidth=1.5, picker=5,
+                                  marker=None)  # 明确设置不显示标记点
 
             # 保存线条引用和原始线宽
             self.lines.append(line)
             self.original_linewidths[line] = line.get_linewidth()
+
+            # 峰谷标记点
+            if show_peakvalley:
+                from scipy.signal import find_peaks
+                x = wavelength[mask]
+                y = reflectance[mask]
+                # 峰
+                peaks, _ = find_peaks(y, distance=5, prominence=0.5)
+                # 谷
+                valleys, _ = find_peaks(-y, distance=5, prominence=0.5)
+                # 绘制峰
+                self.axes.plot(x[peaks], y[peaks], 'ro', markersize=7, label=None)
+                for px, py in zip(x[peaks], y[peaks]):
+                    self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', xytext=(0, 10), ha='center', fontsize=8, color='red')
+                # 绘制谷
+                self.axes.plot(x[valleys], y[valleys], 'bo', markersize=7, label=None)
+                for vx, vy in zip(x[valleys], y[valleys]):
+                    self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', xytext=(0, -15), ha='center', fontsize=8, color='blue')
 
         # 如果有标准曲线，最后绘制它（使其位于最上层）
         if reference_idx >= 0:
@@ -1335,7 +1360,8 @@ class SpectralCanvas(QWidget):
             # 使用更醒目的样式绘制标准曲线
             line, = self.axes.plot(wavelength[mask], reflectance[mask],
                                  label=f"{label} [标准]", color='red',
-                                 linewidth=2.5, linestyle='-', picker=5)
+                                 linewidth=2.5, linestyle='-', picker=5,
+                                 marker=None)  # 明确设置不显示标记点
 
             # 添加标准曲线的指示标签
             last_valid_idx = np.where(mask)[0][-1]
@@ -1348,6 +1374,20 @@ class SpectralCanvas(QWidget):
             # 保存线条引用和原始线宽
             self.lines.append(line)
             self.original_linewidths[line] = line.get_linewidth()
+
+            # 峰谷标记点
+            if show_peakvalley:
+                from scipy.signal import find_peaks
+                x = wavelength[mask]
+                y = reflectance[mask]
+                peaks, _ = find_peaks(y, distance=5, prominence=0.5)
+                valleys, _ = find_peaks(-y, distance=5, prominence=0.5)
+                self.axes.plot(x[peaks], y[peaks], 'ro', markersize=8, label=None)
+                for px, py in zip(x[peaks], y[peaks]):
+                    self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', xytext=(0, 10), ha='center', fontsize=9, color='red')
+                self.axes.plot(x[valleys], y[valleys], 'bo', markersize=8, label=None)
+                for vx, vy in zip(x[valleys], y[valleys]):
+                    self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', xytext=(0, -15), ha='center', fontsize=9, color='blue')
 
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_ylabel('反射率 (%)')
@@ -1547,6 +1587,7 @@ class SpectralCanvas(QWidget):
         for line in self.lines:
             line.set_linewidth(1.5)
             line.set_alpha(0.7)
+            line.set_zorder(1)  # 设置普通曲线的z顺序为基础值
 
         # 如果指定了突出显示的曲线
         if highlight_line is not None:
@@ -1560,8 +1601,26 @@ class SpectralCanvas(QWidget):
 
             # 突出显示指定曲线（如果存在）
             if isinstance(line_idx, int) and 0 <= line_idx < len(self.lines):
-                self.lines[line_idx].set_linewidth(3.0)
-                self.lines[line_idx].set_alpha(1.0)
+                # 增强高亮效果
+                self.lines[line_idx].set_linewidth(4.0)  # 增加线宽
+                self.lines[line_idx].set_alpha(1.0)      # 完全不透明
+                self.lines[line_idx].set_zorder(100)     # 确保高亮线条在最上层
+                
+                # 设置高亮曲线的标记，使其更加明显
+                self.lines[line_idx].set_markeredgewidth(2.0)
+                self.lines[line_idx].set_markeredgecolor('white')
+                self.lines[line_idx].set_markersize(8)
+            elif isinstance(line_idx, matplotlib.lines.Line2D):
+                # 直接处理Line2D对象
+                line = line_idx
+                line.set_linewidth(4.0)
+                line.set_alpha(1.0)
+                line.set_zorder(100)
+                
+                # 设置高亮曲线的标记
+                line.set_markeredgewidth(2.0)
+                line.set_markeredgecolor('white')
+                line.set_markersize(8)
 
         # 更新图例
         self.update_legend()
@@ -2183,6 +2242,8 @@ class SpectralViewer(QMainWindow):
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_list.setToolTip("右键点击列表项可以删除文件")
+        # 添加选择变更事件处理
+        self.file_list.itemSelectionChanged.connect(self.on_file_selection_changed)
         load_layout.addWidget(self.file_list)
 
         load_group.setLayout(load_layout)
@@ -2201,6 +2262,12 @@ class SpectralViewer(QMainWindow):
         self.grid_cb.setChecked(True)
         self.grid_cb.stateChanged.connect(self.on_grid_changed)
         plot_control_layout.addWidget(self.grid_cb)
+
+        # 添加峰谷标记点显示选项
+        self.peakvalley_cb = QCheckBox("显示峰谷标记点")
+        self.peakvalley_cb.setChecked(False)
+        self.peakvalley_cb.stateChanged.connect(self.update_plot)
+        plot_control_layout.addWidget(self.peakvalley_cb)
 
         # 添加波长范围设置
         range_layout = QHBoxLayout()
@@ -2484,6 +2551,8 @@ class SpectralViewer(QMainWindow):
 
         # 遍历文件夹中的所有子文件夹
         files_loaded = 0
+        first_item = None
+        
         for root, dirs, files in os.walk(folder_path):
             for file in files:
                 if file.endswith('.csv'):
@@ -2514,7 +2583,13 @@ class SpectralViewer(QMainWindow):
                         self.spectra_data[display_label] = (wavelength, reflectance)
 
                         # 添加到列表显示
-                        self.file_list.addItem(display_label)
+                        item = QListWidgetItem(display_label)
+                        self.file_list.addItem(item)
+                        
+                        # 记录第一个加载的文件
+                        if files_loaded == 0:
+                            first_item = item
+                        
                         files_loaded += 1
                     except Exception as e:
                         print(f"无法读取文件 {file_path}: {e}")
@@ -2524,6 +2599,10 @@ class SpectralViewer(QMainWindow):
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
             self.analyze_btn.setEnabled(True)  # 启用分析按钮
+
+            # 选中第一个加载的文件
+            if first_item:
+                self.file_list.setCurrentItem(first_item)
 
             # 显示加载的文件数量
             QMessageBox.information(self, "数据加载完成",
@@ -2657,7 +2736,25 @@ class SpectralViewer(QMainWindow):
                 if self.reference_curve is not None:
                     reference_curve = self.reference_curve.replace(" [标准]", "")
 
+                # 记住当前选中的文件以便在更新后重新高亮
+                selected_items = self.file_list.selectedItems()
+                selected_curve = None
+                if selected_items:
+                    selected_curve = selected_items[0].text().replace(" [标准]", "")
+                
+                # 更新图表
                 self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
+
+                # 如果有选中文件，高亮对应曲线
+                if selected_curve:
+                    for line in self.canvas.lines:
+                        if line.get_label() == selected_curve:
+                            self.canvas.update_highlight(line)
+                            break
+                        # 模糊匹配
+                        elif selected_curve in line.get_label() or line.get_label() in selected_curve:
+                            self.canvas.update_highlight(line)
+                            break
 
                 # 如果有波长标记，重新添加
                 if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
@@ -3576,7 +3673,11 @@ class SpectralViewer(QMainWindow):
             self.spectra_data[display_label] = (wavelength, reflectance)
 
             # 添加到列表显示
-            self.file_list.addItem(display_label)
+            item = QListWidgetItem(display_label)
+            self.file_list.addItem(item)
+            
+            # 选中新添加的条目
+            self.file_list.setCurrentItem(item)
 
             # 启用按钮
             self.reload_btn.setEnabled(True)
@@ -3950,6 +4051,57 @@ class SpectralViewer(QMainWindow):
         dialog = WavelengthAnalysisDialog(self)
         dialog.set_html_content(analysis_html)
         dialog.exec_()
+
+    def on_file_selection_changed(self):
+        """处理文件列表选择变更事件"""
+        selected_items = self.file_list.selectedItems()
+        
+        # 如果没有选中项，或者没有绘图画布，清除高亮并返回
+        if not selected_items or not hasattr(self, 'canvas') or self.canvas is None:
+            if hasattr(self, 'canvas') and self.canvas is not None:
+                self.canvas.update_highlight(None)  # 清除高亮
+            return
+            
+        # 获取选中的文件名（如果是多选，只取第一个）
+        selected_curve = selected_items[0].text()
+        clean_name = selected_curve.replace(" [标准]", "")  # 移除可能存在的标记
+        
+        print(f"选中文件: {clean_name}")  # 调试信息
+        
+        # 查找对应的曲线并高亮显示
+        curve_found = False
+        line_to_highlight = None
+        
+        if hasattr(self.canvas, 'lines') and self.canvas.lines:
+            # 打印当前所有曲线标签以便调试
+            print(f"当前曲线标签: {[line.get_label() for line in self.canvas.lines]}")
+            
+            # 查找匹配的曲线
+            for line in self.canvas.lines:
+                print(f"比较: '{line.get_label()}' 与 '{clean_name}'")  # 调试信息
+                if line.get_label() == clean_name:
+                    line_to_highlight = line
+                    curve_found = True
+                    print(f"找到匹配曲线: {clean_name}")  # 调试信息
+                    break
+            
+            # 如果没有找到精确匹配，尝试模糊匹配（检查是否包含）
+            if not curve_found:
+                for line in self.canvas.lines:
+                    if clean_name in line.get_label() or line.get_label() in clean_name:
+                        line_to_highlight = line
+                        curve_found = True
+                        print(f"找到模糊匹配曲线: {line.get_label()} <-> {clean_name}")  # 调试信息
+                        break
+            
+            # 高亮显示曲线或清除高亮
+            if curve_found and line_to_highlight:
+                self.canvas.update_highlight(line_to_highlight)
+            else:
+                print(f"未找到匹配曲线: {clean_name}")  # 调试信息
+                self.canvas.update_highlight(None)
+        else:
+            print("画布上没有曲线或lines属性不存在")  # 调试信息
 
 
 class WavelengthAnalysisDialog(BaseAnalysisDialog):
