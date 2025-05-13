@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
                             QMenu, QTextEdit, QDialog, QTableWidget,
                             QTableWidgetItem, QTabWidget, QHeaderView,
-                            QLineEdit, QListWidgetItem)
+                            QLineEdit, QListWidgetItem, QSlider)
 from PySide6.QtCore import Qt, QDir, QPoint
 from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -1125,9 +1125,10 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
 class SpectralCanvas(QWidget):
     """用于显示光谱数据的画布类"""
 
-    def __init__(self, width=10, height=6, dpi=100):
+    def __init__(self, width=10, height=6, dpi=100, viewer_ref=None):
         # 初始化QWidget
         super().__init__()
+        self.viewer_ref = viewer_ref
 
         # 创建MatPlotLib图形和坐标轴
         self.fig = Figure(figsize=(width, height), dpi=dpi)
@@ -1298,9 +1299,21 @@ class SpectralCanvas(QWidget):
 
         # 获取峰谷标记点显示状态
         show_peakvalley = False
-        parent = self.parent()
-        if parent and hasattr(parent, 'peakvalley_cb'):
-            show_peakvalley = parent.peakvalley_cb.isChecked()
+        peakvalley_sensitivity = 5  # 默认灵敏度值
+        if self.viewer_ref and hasattr(self.viewer_ref, 'peakvalley_cb'):
+            show_peakvalley = self.viewer_ref.peakvalley_cb.isChecked()
+            if hasattr(self.viewer_ref, 'peakvalley_sensitivity'):
+                peakvalley_sensitivity = self.viewer_ref.peakvalley_sensitivity.value()
+        
+        # 调试信息
+        print(f"[plot_spectra] show_peakvalley: {show_peakvalley}, sensitivity: {peakvalley_sensitivity}")
+
+        # 根据灵敏度调整峰谷检测参数
+        # 灵敏度越高(值越大)，prominence越低，检测到的峰谷越多
+        # 调整参数使得默认值能显示足够的峰谷点
+        prominence = 0.8 - (peakvalley_sensitivity * 0.07)  # 灵敏度为1时prominence=0.73，灵敏度为10时prominence=0.1
+        distance = max(1, 10 - peakvalley_sensitivity)  # 灵敏度为1时distance=9，灵敏度为10时distance=1 (原为0)
+        print(f"[plot_spectra] prominence: {prominence}, distance: {distance}")
 
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
@@ -1320,9 +1333,11 @@ class SpectralCanvas(QWidget):
 
             # 移除NaN值
             mask = ~np.isnan(reflectance)
+            valid_wavelength = wavelength[mask]
+            valid_reflectance = reflectance[mask]
 
             # 绘制曲线，保存线条引用，并设置pickradius使曲线更容易被选中
-            line, = self.axes.plot(wavelength[mask], reflectance[mask],
+            line, = self.axes.plot(valid_wavelength, valid_reflectance,
                                   label=label, color=colors[i],
                                   linewidth=1.5, picker=5,
                                   marker=None)  # 明确设置不显示标记点
@@ -1334,20 +1349,44 @@ class SpectralCanvas(QWidget):
             # 峰谷标记点
             if show_peakvalley:
                 from scipy.signal import find_peaks
-                x = wavelength[mask]
-                y = reflectance[mask]
-                # 峰
-                peaks, _ = find_peaks(y, distance=5, prominence=0.5)
-                # 谷
-                valleys, _ = find_peaks(-y, distance=5, prominence=0.5)
-                # 绘制峰
-                self.axes.plot(x[peaks], y[peaks], 'ro', markersize=7, label=None)
-                for px, py in zip(x[peaks], y[peaks]):
-                    self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', xytext=(0, 10), ha='center', fontsize=8, color='red')
-                # 绘制谷
-                self.axes.plot(x[valleys], y[valleys], 'bo', markersize=7, label=None)
-                for vx, vy in zip(x[valleys], y[valleys]):
-                    self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', xytext=(0, -15), ha='center', fontsize=8, color='blue')
+                x = valid_wavelength
+                y = valid_reflectance
+                # 峰，使用灵敏度参数
+                peaks, peak_properties = find_peaks(y, distance=distance, prominence=prominence)
+                # 谷，使用灵敏度参数
+                valleys, valley_properties = find_peaks(-y, distance=distance, prominence=prominence)
+
+                print(f"[plot_spectra] Curve: {label}, Peaks found: {len(peaks)}, Valleys found: {len(valleys)}")
+
+                # 如果检测到过多峰值，仅保留最显著的一些
+                max_points = 10  # 最多显示的峰/谷点数
+                if len(peaks) > max_points:
+                    # 根据峰的显著程度（prominence）排序
+                    peak_significances = peak_properties.get('prominences', np.ones(len(peaks)))
+                    significant_peak_indices = np.argsort(peak_significances)[-max_points:]
+                    peaks = peaks[significant_peak_indices]
+                
+                if len(valleys) > max_points:
+                    # 根据谷的显著程度（prominence）排序
+                    valley_significances = valley_properties.get('prominences', np.ones(len(valleys)))
+                    significant_valley_indices = np.argsort(valley_significances)[-max_points:]
+                    valleys = valleys[significant_valley_indices]
+                
+                # 绘制峰标记 - 使用较小实心点
+                if len(peaks) > 0:
+                    self.axes.plot(x[peaks], y[peaks], 'o', markersize=6, markerfacecolor='red', markeredgecolor='white', markeredgewidth=2, alpha=1.0, zorder=15)
+                    for px, py in zip(x[peaks], y[peaks]):
+                        self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', 
+                                        xytext=(0, 20), ha='center', fontsize=6, color='red',
+                                        bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
+                
+                # 绘制谷标记 - 使用较小实心点
+                if len(valleys) > 0:
+                    self.axes.plot(x[valleys], y[valleys], 'o', markersize=6, markerfacecolor='blue', markeredgecolor='white', markeredgewidth=2, alpha=1.0, zorder=15)
+                    for vx, vy in zip(x[valleys], y[valleys]):
+                        self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', 
+                                        xytext=(0, -25), ha='center', fontsize=9, color='blue',
+                                        bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
 
         # 如果有标准曲线，最后绘制它（使其位于最上层）
         if reference_idx >= 0:
@@ -1380,14 +1419,42 @@ class SpectralCanvas(QWidget):
                 from scipy.signal import find_peaks
                 x = wavelength[mask]
                 y = reflectance[mask]
-                peaks, _ = find_peaks(y, distance=5, prominence=0.5)
-                valleys, _ = find_peaks(-y, distance=5, prominence=0.5)
-                self.axes.plot(x[peaks], y[peaks], 'ro', markersize=8, label=None)
-                for px, py in zip(x[peaks], y[peaks]):
-                    self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', xytext=(0, 10), ha='center', fontsize=9, color='red')
-                self.axes.plot(x[valleys], y[valleys], 'bo', markersize=8, label=None)
-                for vx, vy in zip(x[valleys], y[valleys]):
-                    self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', xytext=(0, -15), ha='center', fontsize=9, color='blue')
+                # 峰，使用灵敏度参数
+                peaks, peak_properties = find_peaks(y, distance=distance, prominence=prominence)
+                # 谷，使用灵敏度参数
+                valleys, valley_properties = find_peaks(-y, distance=distance, prominence=prominence)
+
+                print(f"[plot_spectra] Reference Curve: {label}, Peaks found: {len(peaks)}, Valleys found: {len(valleys)}")
+
+                # 如果检测到过多峰值，仅保留最显著的一些
+                max_points = 10  # 最多显示的峰/谷点数
+                if len(peaks) > max_points:
+                    # 根据峰的显著程度（prominence）排序
+                    peak_significances = peak_properties.get('prominences', np.ones(len(peaks)))
+                    significant_peak_indices = np.argsort(peak_significances)[-max_points:]
+                    peaks = peaks[significant_peak_indices]
+                
+                if len(valleys) > max_points:
+                    # 根据谷的显著程度（prominence）排序
+                    valley_significances = valley_properties.get('prominences', np.ones(len(valleys)))
+                    significant_valley_indices = np.argsort(valley_significances)[-max_points:]
+                    valleys = valleys[significant_valley_indices]
+                
+                # 绘制峰标记 - 使用较小实心点
+                if len(peaks) > 0:
+                    self.axes.plot(x[peaks], y[peaks], 'o', markersize=9, markerfacecolor='red', markeredgecolor='white', markeredgewidth=2, alpha=1.0, zorder=15)
+                    for px, py in zip(x[peaks], y[peaks]):
+                        self.axes.annotate(f'{px:.0f}', (px, py), textcoords='offset points', 
+                                        xytext=(0, 20), ha='center', fontsize=9, color='red',
+                                        bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
+                
+                # 绘制谷标记 - 使用较小实心点
+                if len(valleys) > 0:
+                    self.axes.plot(x[valleys], y[valleys], 'o', markersize=9, markerfacecolor='blue', markeredgecolor='white', markeredgewidth=2, alpha=1.0, zorder=15)
+                    for vx, vy in zip(x[valleys], y[valleys]):
+                        self.axes.annotate(f'{vx:.0f}', (vx, vy), textcoords='offset points', 
+                                        xytext=(0, -25), ha='center', fontsize=9, color='blue',
+                                        bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
 
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_ylabel('反射率 (%)')
@@ -2265,9 +2332,27 @@ class SpectralViewer(QMainWindow):
 
         # 添加峰谷标记点显示选项
         self.peakvalley_cb = QCheckBox("显示峰谷标记点")
-        self.peakvalley_cb.setChecked(False)
+        self.peakvalley_cb.setChecked(True)  # 默认选中
         self.peakvalley_cb.stateChanged.connect(self.update_plot)
         plot_control_layout.addWidget(self.peakvalley_cb)
+        
+        # 添加峰谷灵敏度调节滑块
+        sensitivity_layout = QHBoxLayout()
+        sensitivity_layout.addWidget(QLabel("峰谷检测灵敏度:"))
+        self.peakvalley_sensitivity = QSlider(Qt.Horizontal)
+        self.peakvalley_sensitivity.setMinimum(1)
+        self.peakvalley_sensitivity.setMaximum(10)
+        self.peakvalley_sensitivity.setValue(6)  # 默认值为6，提高初始灵敏度
+        self.peakvalley_sensitivity.setTickPosition(QSlider.TicksBelow)
+        self.peakvalley_sensitivity.setTickInterval(1)
+        self.peakvalley_sensitivity.valueChanged.connect(self.update_plot)
+        sensitivity_layout.addWidget(self.peakvalley_sensitivity)
+        self.sensitivity_value_label = QLabel("6")  # 调整默认显示值
+        self.peakvalley_sensitivity.valueChanged.connect(
+            lambda value: self.sensitivity_value_label.setText(str(value))
+        )
+        sensitivity_layout.addWidget(self.sensitivity_value_label)
+        plot_control_layout.addLayout(sensitivity_layout)
 
         # 添加波长范围设置
         range_layout = QHBoxLayout()
@@ -2376,7 +2461,7 @@ class SpectralViewer(QMainWindow):
         plot_layout = QVBoxLayout(plot_panel)
 
         # 创建绘图画布
-        self.canvas = SpectralCanvas()
+        self.canvas = SpectralCanvas(viewer_ref=self)
 
         # 创建导航工具栏 - 使用辅助函数创建PySide6兼容的工具栏
         self.toolbar = create_toolbar(self.canvas, plot_panel)
@@ -2764,6 +2849,13 @@ class SpectralViewer(QMainWindow):
 
                     if wavelengths:
                         self.canvas.add_wavelength_markers(wavelengths)
+                
+                # 强制刷新画布以确保峰谷标记正确显示
+                self.canvas.canvas.draw()
+                
+                # 添加一个额外的打印以便于调试
+                print(f"图表已更新，峰谷标记显示状态: {self.peakvalley_cb.isChecked()}, 灵敏度: {self.peakvalley_sensitivity.value()}")
+                
         except Exception as e:
             QMessageBox.warning(self, "绘图错误", f"无法绘制图表: {str(e)}")
 
