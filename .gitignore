@@ -45,3 +45,5 @@ Thumbs.db
 # 环境变量文件
 .env
 .env.local
+# 其他
+.cursor/

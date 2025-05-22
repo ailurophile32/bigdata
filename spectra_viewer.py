@@ -730,13 +730,15 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         reference_name = self.parent.reference_curve
         clean_ref_name = reference_name.replace(" [标准]", "")
 
-        if clean_ref_name not in self.parent.spectra_data:
+        # 从当前数据类型字典中获取标准曲线数据
+        current_data_type = self.parent.current_data_type
+        if clean_ref_name not in self.parent.spectra_data[current_data_type]:
             layout.addWidget(QLabel(f"未找到标准曲线：{clean_ref_name}"))
             self.tab_widget.addTab(tab, "标准比对")
             return
 
         # 获取标准曲线数据
-        ref_wavelength, ref_reflectance = self.parent.spectra_data[clean_ref_name]
+        ref_wavelength, ref_reflectance = self.parent.spectra_data[current_data_type][clean_ref_name]
 
         # 过滤NaN值
         mask = ~np.isnan(self.reflectance)
@@ -1231,7 +1233,7 @@ class SpectralCanvas(QWidget):
         """绘制多条光谱曲线
 
         Args:
-            spectra_dict: 包含多个光谱数据的字典 {显示标签: (波长数组, 反射率数组)}
+            spectra_dict: 包含多个光谱数据的字典 {显示标签: (波长数组, 反射率/透射率/吸收率数组)}
             title: 图表标题
             reference_curve: 标准曲线的名称
         """
@@ -1240,6 +1242,24 @@ class SpectralCanvas(QWidget):
         self.legend_lines = []
         self.highlighted_line = None
         self.original_linewidths = {}
+
+        # 检测数据类型，设置不同的线型和颜色
+        data_type = "reflectance"  # 默认为反射率
+        if "吸收率" in title:
+            data_type = "absorbance"
+        elif "透射率" in title:
+            data_type = "transmittance"
+            
+        # 根据数据类型设置不同的颜色映射
+        if data_type == "reflectance":
+            colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(spectra_dict)))
+            line_style = '-'
+        elif data_type == "transmittance":
+            colors = plt.cm.Greens(np.linspace(0.3, 0.9, len(spectra_dict)))
+            line_style = '--'
+        else:  # absorbance
+            colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(spectra_dict)))
+            line_style = '-.'
 
         # 添加光谱区域背景
         # 定义常见光谱区域
@@ -1339,7 +1359,7 @@ class SpectralCanvas(QWidget):
             # 绘制曲线，保存线条引用，并设置pickradius使曲线更容易被选中
             line, = self.axes.plot(valid_wavelength, valid_reflectance,
                                   label=label, color=colors[i],
-                                  linewidth=1.5, picker=5,
+                                  linestyle=line_style, linewidth=1.5, picker=5,
                                   marker=None)  # 明确设置不显示标记点
 
             # 保存线条引用和原始线宽
@@ -1456,8 +1476,15 @@ class SpectralCanvas(QWidget):
                                         xytext=(0, -25), ha='center', fontsize=9, color='blue',
                                         bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
 
+        # 根据数据类型设置Y轴标签
+        if data_type == "reflectance":
+            self.axes.set_ylabel('反射率 (%)')
+        elif data_type == "transmittance":
+            self.axes.set_ylabel('透射率 (%)')
+        else:  # absorbance
+            self.axes.set_ylabel('吸收率 (%)')
+            
         self.axes.set_xlabel('波长 (nm)')
-        self.axes.set_ylabel('反射率 (%)')
         self.axes.set_title(title)
 
         # 应用当前的网格状态 - 使用属性而不是直接访问变量
@@ -2217,11 +2244,18 @@ class SpectralViewer(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.spectra_data = {}  # 用于存储所有已加载的光谱数据
+        # 修改数据结构，分别存储反射率、透射率和吸收率数据
+        self.spectra_data = {
+            'reflectance': {},  # 存储反射率数据 {显示标签: (波长数组, 反射率数组)}
+            'transmittance': {},  # 存储透射率数据 {显示标签: (波长数组, 透射率数组)}
+            'absorbance': {}   # 存储吸收率数据 {显示标签: (波长数组, 吸收率数组)}
+        }
         self.base_folder = ""   # 基础文件夹路径
         self.grid_visible = True  # 添加网格状态跟踪
         self.reference_curve = None  # 存储标准曲线的名称
         self.detail_btn = None  # 查看详细结果按钮
+        self.current_data_type = 'reflectance'  # 当前选择的数据类型
+        self.data_pairs = {}  # 存储反射率-透射率数据对 {吸收率标签: (反射率标签, 透射率标签)}
 
         self.initUI()
 
@@ -2251,6 +2285,16 @@ class SpectralViewer(QMainWindow):
         # 数据加载区域
         load_group = QGroupBox("数据加载")
         load_layout = QVBoxLayout()
+
+        # 创建数据类型选择
+        data_type_layout = QHBoxLayout()
+        data_type_layout.addWidget(QLabel("数据类型:"))
+        self.data_type_combo = QComboBox()
+        self.data_type_combo.addItems(["反射率", "透射率"])
+        self.data_type_combo.currentIndexChanged.connect(self.on_data_type_changed)
+        data_type_layout.addWidget(self.data_type_combo)
+        data_type_layout.addStretch(1)
+        load_layout.addLayout(data_type_layout)
 
         # 创建上方按钮布局（两个加载按钮并排）
         top_btn_layout = QHBoxLayout()
@@ -2312,6 +2356,39 @@ class SpectralViewer(QMainWindow):
         # 添加选择变更事件处理
         self.file_list.itemSelectionChanged.connect(self.on_file_selection_changed)
         load_layout.addWidget(self.file_list)
+
+        # 添加吸收率计算区域
+        absorbance_group = QGroupBox("吸收率计算")
+        absorbance_layout = QVBoxLayout()
+        
+        # 添加说明标签
+        absorbance_layout.addWidget(QLabel("选择反射率和透射率数据对计算吸收率:"))
+        
+        # 添加反射率数据选择
+        refl_layout = QHBoxLayout()
+        refl_layout.addWidget(QLabel("反射率数据:"))
+        self.refl_combo = QComboBox()
+        refl_layout.addWidget(self.refl_combo)
+        absorbance_layout.addLayout(refl_layout)
+        
+        # 添加透射率数据选择
+        trans_layout = QHBoxLayout()
+        trans_layout.addWidget(QLabel("透射率数据:"))
+        self.trans_combo = QComboBox()
+        trans_layout.addWidget(self.trans_combo)
+        absorbance_layout.addLayout(trans_layout)
+        
+        # 添加计算按钮
+        calc_layout = QHBoxLayout()
+        self.calc_absorbance_btn = QPushButton("计算吸收率")
+        self.calc_absorbance_btn.clicked.connect(self.calculate_absorbance)
+        self.calc_absorbance_btn.setEnabled(False)
+        calc_layout.addWidget(self.calc_absorbance_btn)
+        absorbance_layout.addLayout(calc_layout)
+        
+        # 应用布局
+        absorbance_group.setLayout(absorbance_layout)
+        load_layout.addWidget(absorbance_group)
 
         load_group.setLayout(load_layout)
         control_layout.addWidget(load_group)
@@ -2567,10 +2644,11 @@ class SpectralViewer(QMainWindow):
             if self.reference_curve == clean_label:
                 self.reference_curve = None  # 移除标准曲线引用
 
-            if clean_label in self.spectra_data:
-                del self.spectra_data[clean_label]
-            elif label in self.spectra_data:
-                del self.spectra_data[label]
+            # 从当前数据类型字典中删除数据
+            if clean_label in self.spectra_data[self.current_data_type]:
+                del self.spectra_data[self.current_data_type][clean_label]
+            elif label in self.spectra_data[self.current_data_type]:
+                del self.spectra_data[self.current_data_type][label]
 
             # 从列表中移除项目
             row = self.file_list.row(item)
@@ -2587,7 +2665,7 @@ class SpectralViewer(QMainWindow):
 
     def clear_all_data(self):
         """清空所有加载的数据"""
-        if not self.spectra_data:
+        if not any(self.spectra_data[data_type] for data_type in self.spectra_data):
             return
 
         # 确认是否清空
@@ -2598,8 +2676,8 @@ class SpectralViewer(QMainWindow):
         if reply == QMessageBox.StandardButton.No:
             return
 
-        # 清空数据
-        self.spectra_data.clear()
+        # 清空数据 - 只清空当前数据类型
+        self.spectra_data[self.current_data_type].clear()
         self.file_list.clear()
         self.canvas.clear_plot()
 
@@ -2611,7 +2689,7 @@ class SpectralViewer(QMainWindow):
         self.reload_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)  # 禁用分析按钮
 
-        QMessageBox.information(self, "清空完成", "已清空所有数据。")
+        QMessageBox.information(self, "清空完成", f"已清空所有{self.get_data_type_name()}数据。")
 
     def load_data_folder(self):
         """加载数据文件夹并处理所有CSV文件"""
@@ -2625,12 +2703,12 @@ class SpectralViewer(QMainWindow):
         reply = QMessageBox.Yes
         if self.file_list.count() > 0:
             reply = QMessageBox.question(self, '确认操作',
-                                       '是否先清空当前已加载的数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据',
+                                       f'是否先清空当前已加载的{self.get_data_type_name()}数据？\n点击"是"将清空当前数据\n点击"否"将追加新数据',
                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
 
         if reply == QMessageBox.Yes:
             self.file_list.clear()
-            self.spectra_data.clear()
+            self.spectra_data[self.current_data_type].clear()
 
         self.base_folder = folder_path
 
@@ -2643,7 +2721,7 @@ class SpectralViewer(QMainWindow):
                 if file.endswith('.csv'):
                     file_path = os.path.join(root, file)
                     try:
-                        wavelength, reflectance = self.read_spectral_data(file_path)
+                        wavelength, values = self.read_spectral_data(file_path)
 
                         # 获取相对路径并处理为显示标签
                         rel_path = os.path.relpath(file_path, folder_path)
@@ -2664,11 +2742,19 @@ class SpectralViewer(QMainWindow):
                             # 直接在根目录下的文件
                             display_label = rel_path
 
-                        # 存储数据
-                        self.spectra_data[display_label] = (wavelength, reflectance)
+                        # 存储数据到当前选择的数据类型
+                        self.spectra_data[self.current_data_type][display_label] = (wavelength, values)
 
                         # 添加到列表显示
                         item = QListWidgetItem(display_label)
+                        # 设置颜色
+                        if self.current_data_type == 'reflectance':
+                            item.setForeground(QBrush(QColor("blue")))
+                        elif self.current_data_type == 'transmittance':
+                            item.setForeground(QBrush(QColor("green")))
+                        elif self.current_data_type == 'absorbance':
+                            item.setForeground(QBrush(QColor("red")))
+                        
                         self.file_list.addItem(item)
                         
                         # 记录第一个加载的文件
@@ -2797,7 +2883,8 @@ class SpectralViewer(QMainWindow):
 
     def update_plot(self):
         """更新绘图，显示所有光谱数据"""
-        if not self.spectra_data:
+        # 检查是否有数据
+        if not any(self.spectra_data[data_type] for data_type in self.spectra_data):
             self.canvas.clear_plot()
             return
 
@@ -2808,11 +2895,22 @@ class SpectralViewer(QMainWindow):
 
             # 筛选波长范围内的数据
             filtered_data = {}
-            for label, (wavelength, reflectance) in self.spectra_data.items():
-                # 筛选波长范围
-                mask = (wavelength >= wl_min) & (wavelength <= wl_max)
-                if np.any(mask):  # 确保有数据点
-                    filtered_data[label] = (wavelength[mask], reflectance[mask])
+            
+            # 根据当前选择的数据类型筛选数据
+            if self.current_data_type == 'absorbance':
+                # 显示吸收率数据
+                for label, (wavelength, values) in self.spectra_data['absorbance'].items():
+                    # 筛选波长范围
+                    mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+                    if np.any(mask):  # 确保有数据点
+                        filtered_data[label] = (wavelength[mask], values[mask])
+            else:
+                # 显示反射率或透射率数据
+                for label, (wavelength, values) in self.spectra_data[self.current_data_type].items():
+                    # 筛选波长范围
+                    mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+                    if np.any(mask):  # 确保有数据点
+                        filtered_data[label] = (wavelength[mask], values[mask])
 
             # 绘制所有光谱数据
             if filtered_data:
@@ -2827,8 +2925,11 @@ class SpectralViewer(QMainWindow):
                 if selected_items:
                     selected_curve = selected_items[0].text().replace(" [标准]", "")
                 
+                # 更新图表标题
+                title = f"{self.get_data_type_name()}光谱对比图"
+                
                 # 更新图表
-                self.canvas.plot_spectra(filtered_data, reference_curve=reference_curve)
+                self.canvas.plot_spectra(filtered_data, title=title, reference_curve=reference_curve)
 
                 # 如果有选中文件，高亮对应曲线
                 if selected_curve:
@@ -3704,9 +3805,10 @@ class SpectralViewer(QMainWindow):
         """分析单条光谱曲线的详细特征"""
         selected_item = self.file_list.selectedItems()[0]
         curve_name = selected_item.text()
+        clean_name = curve_name.replace(" [标准]", "")  # 移除可能存在的标记
 
-        if curve_name not in self.spectra_data:
-            QMessageBox.warning(self, "无法分析", f"未找到选中曲线 '{curve_name}' 的数据。")
+        if clean_name not in self.spectra_data[self.current_data_type]:
+            QMessageBox.warning(self, "无法分析", f"未找到选中曲线 '{clean_name}' 的数据。")
             return
 
         # 获取当前波长范围
@@ -3714,7 +3816,7 @@ class SpectralViewer(QMainWindow):
         wl_max = float(self.wl_max.currentText())
 
         # 获取曲线数据并筛选波长范围
-        wavelength, reflectance = self.spectra_data[curve_name]
+        wavelength, reflectance = self.spectra_data[self.current_data_type][clean_name]
         mask = (wavelength >= wl_min) & (wavelength <= wl_max)
 
         filtered_data = (wavelength[mask], reflectance[mask])
@@ -3722,7 +3824,7 @@ class SpectralViewer(QMainWindow):
         # 查找曲线在当前显示中的索引
         curve_index = -1
         for i, label in enumerate(self.canvas.axes.get_legend().get_texts()):
-            if label.get_text() == curve_name:
+            if label.get_text() == clean_name:
                 curve_index = i
                 break
 
@@ -3731,7 +3833,7 @@ class SpectralViewer(QMainWindow):
             return
 
         # 创建并显示单条曲线分析对话框
-        dialog = SingleCurveAnalysisDialog(self, filtered_data, curve_name, curve_index)
+        dialog = SingleCurveAnalysisDialog(self, filtered_data, clean_name, curve_index)
         dialog.exec_()
 
     def load_csv_file(self):
@@ -3757,15 +3859,23 @@ class SpectralViewer(QMainWindow):
             # 检查是否已经加载相同名称的文件
             count = 0
             base_label = display_label
-            while display_label in self.spectra_data:
+            while display_label in self.spectra_data[self.current_data_type]:
                 count += 1
                 display_label = f"{base_label} ({count})"
 
-            # 存储数据
-            self.spectra_data[display_label] = (wavelength, reflectance)
+            # 存储数据到当前选择的数据类型
+            self.spectra_data[self.current_data_type][display_label] = (wavelength, reflectance)
 
             # 添加到列表显示
             item = QListWidgetItem(display_label)
+            # 设置颜色
+            if self.current_data_type == 'reflectance':
+                item.setForeground(QBrush(QColor("blue")))
+            elif self.current_data_type == 'transmittance':
+                item.setForeground(QBrush(QColor("green")))
+            elif self.current_data_type == 'absorbance':
+                item.setForeground(QBrush(QColor("red")))
+                
             self.file_list.addItem(item)
             
             # 选中新添加的条目
@@ -4171,7 +4281,7 @@ class SpectralViewer(QMainWindow):
             # 查找匹配的曲线
             for line in self.canvas.lines:
                 print(f"比较: '{line.get_label()}' 与 '{clean_name}'")  # 调试信息
-                if line.get_label() == clean_name:
+                if line.get_label() == clean_name or line.get_label() == f"{clean_name} [标准]":
                     line_to_highlight = line
                     curve_found = True
                     print(f"找到匹配曲线: {clean_name}")  # 调试信息
@@ -4186,14 +4296,183 @@ class SpectralViewer(QMainWindow):
                         print(f"找到模糊匹配曲线: {line.get_label()} <-> {clean_name}")  # 调试信息
                         break
             
-            # 高亮显示曲线或清除高亮
-            if curve_found and line_to_highlight:
+            # 高亮显示找到的曲线
+            if curve_found:
                 self.canvas.update_highlight(line_to_highlight)
             else:
                 print(f"未找到匹配曲线: {clean_name}")  # 调试信息
+                # 如果没有找到匹配曲线，则清除高亮
                 self.canvas.update_highlight(None)
+
+    def on_data_type_changed(self, index):
+        """处理数据类型选择变更"""
+        data_types = ['reflectance', 'transmittance']
+        self.current_data_type = data_types[index]
+        
+        # 更新UI标题
+        if self.current_data_type == 'reflectance':
+            self.setWindowTitle('光谱分析工具 - 反射率数据')
         else:
-            print("画布上没有曲线或lines属性不存在")  # 调试信息
+            self.setWindowTitle('光谱分析工具 - 透射率数据')
+        
+        # 更新数据列表显示
+        self.update_data_lists()
+    
+    def update_data_lists(self):
+        """更新数据列表显示和下拉框"""
+        # 保存当前选中项
+        selected_items = self.file_list.selectedItems()
+        selected_text = selected_items[0].text() if selected_items else ""
+        
+        # 清空列表
+        self.file_list.clear()
+        
+        # 添加当前类型的数据
+        for label, data in self.spectra_data[self.current_data_type].items():
+            item = QListWidgetItem(label)
+            # 设置不同数据类型的颜色
+            if self.current_data_type == 'reflectance':
+                item.setForeground(QBrush(QColor("blue")))
+            elif self.current_data_type == 'transmittance':
+                item.setForeground(QBrush(QColor("green")))
+            else:  # absorbance
+                item.setForeground(QBrush(QColor("red")))
+                
+            self.file_list.addItem(item)
+            
+            # 如果是之前选中的项，重新选中
+            if label == selected_text:
+                self.file_list.setCurrentItem(item)
+        
+        # 更新反射率和透射率下拉框
+        self.refl_combo.clear()
+        self.trans_combo.clear()
+        
+        # 添加反射率数据
+        for label in self.spectra_data['reflectance'].keys():
+            self.refl_combo.addItem(label)
+            
+        # 添加透射率数据
+        for label in self.spectra_data['transmittance'].keys():
+            self.trans_combo.addItem(label)
+            
+        # 启用/禁用计算按钮
+        self.calc_absorbance_btn.setEnabled(
+            self.refl_combo.count() > 0 and self.trans_combo.count() > 0
+        )
+
+    def get_data_type_name(self):
+        """获取当前数据类型的中文名称"""
+        if self.current_data_type == 'reflectance':
+            return "反射率"
+        elif self.current_data_type == 'transmittance':
+            return "透射率"
+        else:  # absorbance
+            return "吸收率"
+
+    def calculate_absorbance(self):
+        """计算吸收率 (A = 100% - R - T)"""
+        # 检查是否有选择反射率和透射率数据
+        if self.refl_combo.count() == 0 or self.trans_combo.count() == 0:
+            QMessageBox.warning(self, "无法计算", "请先加载反射率和透射率数据")
+            return
+            
+        # 获取选择的数据标签
+        refl_label = self.refl_combo.currentText()
+        trans_label = self.trans_combo.currentText()
+        
+        # 检查数据是否存在
+        if refl_label not in self.spectra_data['reflectance'] or trans_label not in self.spectra_data['transmittance']:
+            QMessageBox.warning(self, "数据不存在", "所选数据不存在，请重新选择")
+            return
+            
+        # 获取数据
+        refl_data = self.spectra_data['reflectance'][refl_label]
+        trans_data = self.spectra_data['transmittance'][trans_label]
+        
+        try:
+            # 匹配波长
+            common_wavelength, refl_interp, trans_interp = self.match_wavelengths(refl_data, trans_data)
+            
+            # 计算吸收率: A = 100% - R - T
+            absorbance = 100.0 - refl_interp - trans_interp
+            
+            # 处理可能的负值（测量误差可能导致R+T>100%）
+            absorbance = np.maximum(0, absorbance)
+            
+            # 生成吸收率数据标签
+            abs_label = f"{refl_label}+{trans_label} [吸收率]"
+            
+            # 检查是否已存在同名标签
+            count = 0
+            base_label = abs_label
+            while abs_label in self.spectra_data['absorbance']:
+                count += 1
+                abs_label = f"{base_label} ({count})"
+            
+            # 存储计算结果
+            self.spectra_data['absorbance'][abs_label] = (common_wavelength, absorbance)
+            
+            # 存储数据对关系
+            self.data_pairs[abs_label] = (refl_label, trans_label)
+            
+            # 更新数据类型为吸收率，以显示计算结果
+            if self.data_type_combo.count() == 2:  # 只有反射率和透射率
+                self.data_type_combo.addItem("吸收率")
+            self.data_type_combo.setCurrentText("吸收率")
+            self.current_data_type = 'absorbance'
+            
+            # 更新数据列表
+            self.update_data_lists()
+            
+            # 更新图表
+            self.update_plot()
+            
+            QMessageBox.information(self, "计算完成", f"已成功计算吸收率数据: {abs_label}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "计算错误", f"计算吸收率时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def match_wavelengths(self, refl_data, trans_data):
+        """匹配两种数据的波长点
+        
+        Args:
+            refl_data: 反射率数据元组 (波长数组, 反射率数组)
+            trans_data: 透射率数据元组 (波长数组, 透射率数组)
+            
+        Returns:
+            tuple: (公共波长数组, 插值后的反射率数组, 插值后的透射率数组)
+        """
+        refl_wavelength, refl_values = refl_data
+        trans_wavelength, trans_values = trans_data
+        
+        # 过滤NaN值
+        refl_mask = ~np.isnan(refl_values)
+        trans_mask = ~np.isnan(trans_values)
+        
+        valid_refl_wavelength = refl_wavelength[refl_mask]
+        valid_refl_values = refl_values[refl_mask]
+        
+        valid_trans_wavelength = trans_wavelength[trans_mask]
+        valid_trans_values = trans_values[trans_mask]
+        
+        # 确定公共波长范围
+        min_wl = max(np.min(valid_refl_wavelength), np.min(valid_trans_wavelength))
+        max_wl = min(np.max(valid_refl_wavelength), np.max(valid_trans_wavelength))
+        
+        if min_wl >= max_wl:
+            raise ValueError(f"反射率和透射率数据的波长范围不重叠: [{np.min(valid_refl_wavelength)}-{np.max(valid_refl_wavelength)}] vs [{np.min(valid_trans_wavelength)}-{np.max(valid_trans_wavelength)}]")
+        
+        # 创建公共波长点
+        common_wavelength = np.linspace(min_wl, max_wl, 1000)
+        
+        # 对数据进行插值
+        refl_interp = np.interp(common_wavelength, valid_refl_wavelength, valid_refl_values)
+        trans_interp = np.interp(common_wavelength, valid_trans_wavelength, valid_trans_values)
+        
+        return common_wavelength, refl_interp, trans_interp
 
 
 class WavelengthAnalysisDialog(BaseAnalysisDialog):
