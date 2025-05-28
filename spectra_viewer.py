@@ -69,8 +69,8 @@ class BaseAnalysisDialog(QDialog):
 
         # 获取屏幕尺寸并设置窗口为屏幕的80%大小
         screen = QApplication.primaryScreen().availableGeometry()
-        width = int(screen.width() * 0.8)
-        height = int(screen.height() * 0.8)
+        width = int(screen.width() * 0.9)
+        height = int(screen.height() * 0.9)
         self.setGeometry((screen.width() - width) // 2, (screen.height() - height) // 2, width, height)
 
         # 设置窗口标志，允许最大化

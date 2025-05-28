@@ -13,7 +13,7 @@ try:
     
     # 创建并显示主窗口
     window = SpectralViewer()
-    window.show()
+    window.showMaximized()  # 窗口最大化显示
     
     # 运行应用程序
     sys.exit(app.exec())
