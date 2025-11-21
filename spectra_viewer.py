@@ -2979,7 +2979,7 @@ class SpectralViewer(QMainWindow):
 
     def analyze_spectra(self):
         """分析光谱数据的差异并生成分析报告"""
-        if len(self.spectra_data) < 2:
+        if len(self.spectra_data[self.current_data_type]) < 2:
             QMessageBox.warning(self, "无法分析", "需要至少2个光谱数据才能进行差异分析。")
             return
 
@@ -2990,7 +2990,7 @@ class SpectralViewer(QMainWindow):
 
             # 筛选当前显示的数据
             filtered_data = {}
-            for label, (wavelength, reflectance) in self.spectra_data.items():
+            for label, (wavelength, reflectance) in self.spectra_data[self.current_data_type].items():
                 mask = (wavelength >= wl_min) & (wavelength <= wl_max)
                 if np.any(mask):
                     filtered_data[label] = (wavelength[mask], reflectance[mask])

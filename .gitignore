@@ -47,3 +47,7 @@ Thumbs.db
 .env.local
 # 其他
 .cursor/
+
+data/
+
+.serena/
