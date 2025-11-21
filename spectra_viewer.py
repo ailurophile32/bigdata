@@ -1329,11 +1329,13 @@ class SpectralCanvas(QWidget):
         print(f"[plot_spectra] show_peakvalley: {show_peakvalley}, sensitivity: {peakvalley_sensitivity}")
 
         # 根据灵敏度调整峰谷检测参数
-        # 灵敏度越高(值越大)，prominence越低，检测到的峰谷越多
-        # 调整参数使得默认值能显示足够的峰谷点
-        prominence = 0.8 - (peakvalley_sensitivity * 0.07)  # 灵敏度为1时prominence=0.73，灵敏度为10时prominence=0.1
-        distance = max(1, 10 - peakvalley_sensitivity)  # 灵敏度为1时distance=9，灵敏度为10时distance=1 (原为0)
-        print(f"[plot_spectra] prominence: {prominence}, distance: {distance}")
+        # 改为：peakvalley_sensitivity 代表显示的峰谷数量
+        num_peaks_valleys = peakvalley_sensitivity
+        
+        # 使用固定的低阈值以检测所有潜在的峰谷
+        prominence = 0.05  # 较低的显著性阈值
+        distance = 5      # 较小的最小间距
+        print(f"[plot_spectra] num_peaks_valleys: {num_peaks_valleys}")
 
         # 生成不同的颜色
         colors = plt.cm.tab20(np.linspace(0, 1, len(spectra_dict)))
@@ -1371,15 +1373,15 @@ class SpectralCanvas(QWidget):
                 from scipy.signal import find_peaks
                 x = valid_wavelength
                 y = valid_reflectance
-                # 峰，使用灵敏度参数
+                # 峰
                 peaks, peak_properties = find_peaks(y, distance=distance, prominence=prominence)
-                # 谷，使用灵敏度参数
+                # 谷
                 valleys, valley_properties = find_peaks(-y, distance=distance, prominence=prominence)
 
                 print(f"[plot_spectra] Curve: {label}, Peaks found: {len(peaks)}, Valleys found: {len(valleys)}")
 
-                # 如果检测到过多峰值，仅保留最显著的一些
-                max_points = 10  # 最多显示的峰/谷点数
+                # 仅保留最显著的前N个
+                max_points = num_peaks_valleys
                 if len(peaks) > max_points:
                     # 根据峰的显著程度（prominence）排序
                     peak_significances = peak_properties.get('prominences', np.ones(len(peaks)))
@@ -1439,15 +1441,15 @@ class SpectralCanvas(QWidget):
                 from scipy.signal import find_peaks
                 x = wavelength[mask]
                 y = reflectance[mask]
-                # 峰，使用灵敏度参数
+                # 峰
                 peaks, peak_properties = find_peaks(y, distance=distance, prominence=prominence)
-                # 谷，使用灵敏度参数
+                # 谷
                 valleys, valley_properties = find_peaks(-y, distance=distance, prominence=prominence)
 
                 print(f"[plot_spectra] Reference Curve: {label}, Peaks found: {len(peaks)}, Valleys found: {len(valleys)}")
 
-                # 如果检测到过多峰值，仅保留最显著的一些
-                max_points = 10  # 最多显示的峰/谷点数
+                # 仅保留最显著的前N个
+                max_points = num_peaks_valleys
                 if len(peaks) > max_points:
                     # 根据峰的显著程度（prominence）排序
                     peak_significances = peak_properties.get('prominences', np.ones(len(peaks)))
@@ -2415,16 +2417,16 @@ class SpectralViewer(QMainWindow):
         
         # 添加峰谷灵敏度调节滑块
         sensitivity_layout = QHBoxLayout()
-        sensitivity_layout.addWidget(QLabel("峰谷检测灵敏度:"))
+        sensitivity_layout.addWidget(QLabel("峰谷数:"))
         self.peakvalley_sensitivity = QSlider(Qt.Horizontal)
         self.peakvalley_sensitivity.setMinimum(1)
         self.peakvalley_sensitivity.setMaximum(10)
-        self.peakvalley_sensitivity.setValue(6)  # 默认值为6，提高初始灵敏度
+        self.peakvalley_sensitivity.setValue(2)  # 默认值为2
         self.peakvalley_sensitivity.setTickPosition(QSlider.TicksBelow)
         self.peakvalley_sensitivity.setTickInterval(1)
         self.peakvalley_sensitivity.valueChanged.connect(self.update_plot)
         sensitivity_layout.addWidget(self.peakvalley_sensitivity)
-        self.sensitivity_value_label = QLabel("6")  # 调整默认显示值
+        self.sensitivity_value_label = QLabel("2")  # 默认显示值
         self.peakvalley_sensitivity.valueChanged.connect(
             lambda value: self.sensitivity_value_label.setText(str(value))
         )
