@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
                             QMenu, QTextEdit, QDialog, QTableWidget,
                             QTableWidgetItem, QTabWidget, QHeaderView,
-                            QLineEdit, QListWidgetItem, QSlider)
+                            QLineEdit, QListWidgetItem, QSlider, QScrollArea, QFrame)
 from PySide6.QtCore import Qt, QDir, QPoint
 from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -1221,9 +1221,21 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         selection_panel = self.create_selection_panel()
         main_h_layout.addWidget(selection_panel, 1)
         
-        # 创建右侧分析标签页
+        # 创建右侧布局 (包含标签页和结论区域)
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 上部分：分析图表标签页
         self.tab_widget = QTabWidget()
-        main_h_layout.addWidget(self.tab_widget, 3)
+        right_layout.addWidget(self.tab_widget, 2)
+        
+        # 下部分：结论区域
+        self.conclusion_group = QGroupBox("分析结论")
+        self.conclusion_layout = QVBoxLayout(self.conclusion_group)
+        right_layout.addWidget(self.conclusion_group, 1)
+        
+        main_h_layout.addWidget(right_widget, 3)
         
         self.content_layout.addLayout(main_h_layout)
 
@@ -1298,24 +1310,50 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         self.tab_widget.clear()
         self.setup_matrices_tab()
         self.setup_difference_tab()
-        self.setup_conclusion_tab()
+        
+        # 更新结论区域
+        self.update_conclusion_panel()
         
     def setup_matrices_tab(self):
         """设置相似性矩阵标签页"""
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        main_layout = QVBoxLayout(tab)
         
-        matrices_tabs = QTabWidget()
+        # 创建滚动区域
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         
-        matrices_tabs.addTab(self.create_matrix_table(self.corr_matrix, "相关系数 (Correlation)"), "相关系数")
-        matrices_tabs.addTab(self.create_matrix_table(self.rmse_matrix, "均方根误差 (RMSE)"), "RMSE")
-        matrices_tabs.addTab(self.create_matrix_table(self.sam_matrix, "光谱角 (SAM, 度)"), "SAM")
+        # 滚动区域的内容部件
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         
-        layout.addWidget(matrices_tabs)
+        # 1. 相关系数
+        layout.addWidget(QLabel("<b>相关系数 (Correlation)</b>"))
+        layout.addWidget(self.create_matrix_table(self.corr_matrix, "相关系数 (Correlation)"))
+        layout.addSpacing(10)
+        
+        # 2. RMSE
+        layout.addWidget(QLabel("<b>均方根误差 (RMSE)</b>"))
+        layout.addWidget(self.create_matrix_table(self.rmse_matrix, "均方根误差 (RMSE)"))
+        layout.addSpacing(10)
+        
+        # 3. SAM
+        layout.addWidget(QLabel("<b>光谱角 (SAM, 度)</b>"))
+        layout.addWidget(self.create_matrix_table(self.sam_matrix, "光谱角 (SAM, 度)"))
+        layout.addSpacing(10)
         
         # 添加说明
         note = QLabel("说明：\n1. 相关系数：接近1表示形状高度相似。\n2. RMSE：值越小表示数值差异越小。\n3. SAM：值越小表示光谱形状越相似（角度越小）。")
+        note.setStyleSheet("color: gray; font-style: italic; margin-top: 10px;")
         layout.addWidget(note)
+        
+        # 添加伸缩量，确保内容靠上
+        layout.addStretch()
+        
+        # 设置滚动区域内容
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll)
         
         self.tab_widget.addTab(tab, "相似性矩阵")
 
@@ -1352,6 +1390,7 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 table.setItem(i, j, item)
                 
         table.resizeColumnsToContents()
+        self._adjust_table_height(table)
         return table
 
     def setup_difference_tab(self):
@@ -1406,10 +1445,16 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         
         self.diff_canvas.draw()
 
-    def setup_conclusion_tab(self):
-        """设置结论分析标签页"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+    def update_conclusion_panel(self):
+        """更新结论分析面板"""
+        # 清除旧内容
+        # 注意：我们需要保留布局，只清除子控件是不够的，因为我们想重新创建整个结构
+        # 但为了简单起见，我们可以删除旧的子控件
+        while self.conclusion_layout.count():
+            item = self.conclusion_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         # 控制区域
         control_layout = QHBoxLayout()
@@ -1419,21 +1464,19 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         self.conclusion_ref_combo.currentTextChanged.connect(self.update_conclusion_table)
         control_layout.addWidget(self.conclusion_ref_combo)
         control_layout.addStretch()
-        layout.addLayout(control_layout)
+        self.conclusion_layout.addLayout(control_layout)
         
         # 结论表格
         self.conclusion_table = QTableWidget()
         self.conclusion_table.setColumnCount(5)
         self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "RMSE", "SAM (度)", "结论"])
         self.conclusion_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.conclusion_table)
+        self.conclusion_layout.addWidget(self.conclusion_table)
         
         # 阈值说明
         note = QLabel("判定标准：相关系数 >= 0.95 且 SAM <= 5.0 度 判定为同种物质，否则为不同物质。")
         note.setStyleSheet("color: gray; font-style: italic;")
-        layout.addWidget(note)
-        
-        self.tab_widget.addTab(tab, "分析结论")
+        self.conclusion_layout.addWidget(note)
         
         # 初始更新
         if self.labels:
@@ -1487,6 +1530,24 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             else:
                 item_conclusion.setBackground(QColor(255, 200, 200)) # Red
             self.conclusion_table.setItem(row, 4, item_conclusion)
+        
+        self._adjust_table_height(self.conclusion_table)
+
+    def _adjust_table_height(self, table):
+        """调整表格高度以适应内容"""
+        # 获取表头高度
+        header_height = table.horizontalHeader().height()
+        if header_height <= 0:
+            header_height = table.horizontalHeader().sizeHint().height()
+        if header_height <= 0:
+            header_height = 30 # 默认估计值
+            
+        total_height = header_height + 2 # 边框缓冲
+        for i in range(table.rowCount()):
+            total_height += table.rowHeight(i)
+            
+        # 设置固定高度，防止显示多余的空行
+        table.setFixedHeight(total_height)
 
 
 class SpectralCanvas(QWidget):
