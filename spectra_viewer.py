@@ -1124,6 +1124,371 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         self.tab_widget.addTab(tab, "标准比对")
 
 
+class MultiCurveAnalysisDialog(BaseAnalysisDialog):
+    """多曲线相似性分析对话框"""
+
+    def __init__(self, parent=None, spectra_data=None):
+        super().__init__(parent, "多曲线相似性分析")
+        self.spectra_data = spectra_data
+        self.labels = []
+        
+        # 初始化UI
+        self.init_ui()
+        
+        # 初始全选并分析
+        self.select_all()
+        self.update_analysis()
+
+    def preprocess_data(self):
+        """预处理数据：找到公共波长范围并插值"""
+        # 找到选中曲线的公共波长范围
+        min_wl = -np.inf
+        max_wl = np.inf
+        
+        has_valid_data = False
+        for label in self.labels:
+            wavelength, reflectance = self.spectra_data[label]
+            mask = ~np.isnan(reflectance)
+            valid_wavelength = wavelength[mask]
+            if len(valid_wavelength) > 0:
+                if not has_valid_data:
+                    min_wl = np.min(valid_wavelength)
+                    max_wl = np.max(valid_wavelength)
+                    has_valid_data = True
+                else:
+                    min_wl = max(min_wl, np.min(valid_wavelength))
+                    max_wl = min(max_wl, np.max(valid_wavelength))
+        
+        if not has_valid_data or min_wl >= max_wl:
+            return None, None
+            
+        # 创建公共波长点 (1nm间隔)
+        common_wavelength = np.arange(np.ceil(min_wl), np.floor(max_wl) + 1, 1.0)
+        
+        # 插值选中曲线
+        interp_data = {}
+        for label in self.labels:
+            wavelength, reflectance = self.spectra_data[label]
+            mask = ~np.isnan(reflectance)
+            sorted_indices = np.argsort(wavelength[mask])
+            sorted_wl = wavelength[mask][sorted_indices]
+            sorted_refl = reflectance[mask][sorted_indices]
+            
+            interp_data[label] = np.interp(common_wavelength, sorted_wl, sorted_refl)
+            
+        return common_wavelength, interp_data
+
+    def calculate_metrics(self):
+        """计算相似性矩阵"""
+        n = len(self.labels)
+        corr_matrix = np.zeros((n, n))
+        rmse_matrix = np.zeros((n, n))
+        sam_matrix = np.zeros((n, n))
+        
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    corr_matrix[i, j] = 1.0
+                    rmse_matrix[i, j] = 0.0
+                    sam_matrix[i, j] = 0.0
+                    continue
+                
+                data1 = self.interp_data[self.labels[i]]
+                data2 = self.interp_data[self.labels[j]]
+                
+                # Correlation
+                corr_matrix[i, j] = np.corrcoef(data1, data2)[0, 1]
+                
+                # RMSE
+                rmse_matrix[i, j] = np.sqrt(np.mean((data1 - data2)**2))
+                
+                # SAM
+                norm1 = data1 / np.linalg.norm(data1)
+                norm2 = data2 / np.linalg.norm(data2)
+                # Clip to avoid numerical errors
+                dot_product = np.clip(np.dot(norm1, norm2), -1.0, 1.0)
+                sam_rad = np.arccos(dot_product)
+                sam_matrix[i, j] = np.degrees(sam_rad)
+                
+        return corr_matrix, rmse_matrix, sam_matrix
+
+    def init_ui(self):
+        """初始化UI"""
+        # 创建主水平布局
+        main_h_layout = QHBoxLayout()
+        
+        # 创建左侧选择面板
+        selection_panel = self.create_selection_panel()
+        main_h_layout.addWidget(selection_panel, 1)
+        
+        # 创建右侧分析标签页
+        self.tab_widget = QTabWidget()
+        main_h_layout.addWidget(self.tab_widget, 3)
+        
+        self.content_layout.addLayout(main_h_layout)
+
+    def create_selection_panel(self):
+        """创建曲线选择面板"""
+        panel = QGroupBox("曲线选择")
+        layout = QVBoxLayout(panel)
+        
+        self.curve_list = QListWidget()
+        for label in self.spectra_data.keys():
+            item = QListWidgetItem(label)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.curve_list.addItem(item)
+            
+        layout.addWidget(self.curve_list)
+        
+        # 按钮区域
+        btn_layout = QHBoxLayout()
+        btn_all = QPushButton("全选")
+        btn_all.clicked.connect(self.select_all)
+        btn_none = QPushButton("全不选")
+        btn_none.clicked.connect(self.select_none)
+        btn_layout.addWidget(btn_all)
+        btn_layout.addWidget(btn_none)
+        layout.addLayout(btn_layout)
+        
+        btn_update = QPushButton("更新分析结果")
+        btn_update.clicked.connect(self.update_analysis)
+        # 设置为默认按钮，方便回车触发
+        btn_update.setDefault(True) 
+        layout.addWidget(btn_update)
+        
+        return panel
+
+    def select_all(self):
+        """全选"""
+        for i in range(self.curve_list.count()):
+            self.curve_list.item(i).setCheckState(Qt.CheckState.Checked)
+
+    def select_none(self):
+        """全不选"""
+        for i in range(self.curve_list.count()):
+            self.curve_list.item(i).setCheckState(Qt.CheckState.Unchecked)
+
+    def update_analysis(self):
+        """更新分析结果"""
+        # 获取选中的曲线
+        self.selected_labels = []
+        for i in range(self.curve_list.count()):
+            item = self.curve_list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                self.selected_labels.append(item.text())
+                
+        if len(self.selected_labels) < 2:
+            QMessageBox.warning(self, "提示", "请至少选择2条曲线进行分析")
+            return
+            
+        # 更新当前分析的标签列表
+        self.labels = self.selected_labels
+        
+        # 重新预处理数据
+        self.common_wavelength, self.interp_data = self.preprocess_data()
+        
+        if self.common_wavelength is None:
+            QMessageBox.warning(self, "错误", "无法找到公共波长范围，无法进行分析。")
+            return
+
+        # 重新计算指标
+        self.corr_matrix, self.rmse_matrix, self.sam_matrix = self.calculate_metrics()
+        
+        # 重建标签页
+        self.tab_widget.clear()
+        self.setup_matrices_tab()
+        self.setup_difference_tab()
+        self.setup_conclusion_tab()
+        
+    def setup_matrices_tab(self):
+        """设置相似性矩阵标签页"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        matrices_tabs = QTabWidget()
+        
+        matrices_tabs.addTab(self.create_matrix_table(self.corr_matrix, "相关系数 (Correlation)"), "相关系数")
+        matrices_tabs.addTab(self.create_matrix_table(self.rmse_matrix, "均方根误差 (RMSE)"), "RMSE")
+        matrices_tabs.addTab(self.create_matrix_table(self.sam_matrix, "光谱角 (SAM, 度)"), "SAM")
+        
+        layout.addWidget(matrices_tabs)
+        
+        # 添加说明
+        note = QLabel("说明：\n1. 相关系数：接近1表示形状高度相似。\n2. RMSE：值越小表示数值差异越小。\n3. SAM：值越小表示光谱形状越相似（角度越小）。")
+        layout.addWidget(note)
+        
+        self.tab_widget.addTab(tab, "相似性矩阵")
+
+    def create_matrix_table(self, matrix, title):
+        """创建矩阵表格"""
+        table = QTableWidget()
+        n = len(self.labels)
+        table.setRowCount(n)
+        table.setColumnCount(n)
+        table.setHorizontalHeaderLabels(self.labels)
+        table.setVerticalHeaderLabels(self.labels)
+        
+        for i in range(n):
+            for j in range(n):
+                value = matrix[i, j]
+                item = QTableWidgetItem(f"{value:.4f}")
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                # 简单的颜色高亮
+                if "Correlation" in title:
+                    if i != j:
+                        if value > 0.99:
+                            item.setBackground(QColor(200, 255, 200)) # Green
+                        elif value < 0.9:
+                            item.setBackground(QColor(255, 200, 200)) # Red
+                elif "RMSE" in title:
+                     if i != j:
+                        # Normalize roughly for coloring (assuming RMSE < 10 is good)
+                        if value < 2.0:
+                            item.setBackground(QColor(200, 255, 200))
+                        elif value > 10.0:
+                            item.setBackground(QColor(255, 200, 200))
+                
+                table.setItem(i, j, item)
+                
+        table.resizeColumnsToContents()
+        return table
+
+    def setup_difference_tab(self):
+        """设置差异图标签页"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # 控制区域
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("选择基准曲线:"))
+        self.ref_combo = QComboBox()
+        self.ref_combo.addItems(self.labels)
+        self.ref_combo.currentTextChanged.connect(self.update_difference_plot)
+        control_layout.addWidget(self.ref_combo)
+        control_layout.addStretch()
+        layout.addLayout(control_layout)
+        
+        # 图表区域
+        self.diff_fig = Figure(figsize=(10, 6))
+        self.diff_canvas = FigureCanvas(self.diff_fig)
+        layout.addWidget(self.diff_canvas)
+        
+        self.tab_widget.addTab(tab, "差异分析图")
+        
+        # 初始绘制
+        if self.labels:
+            self.update_difference_plot(self.labels[0])
+
+    def update_difference_plot(self, ref_label):
+        """更新差异图"""
+        self.diff_fig.clear()
+        ax = self.diff_fig.add_subplot(111)
+        
+        if ref_label not in self.interp_data:
+            return
+
+        ref_data = self.interp_data[ref_label]
+        
+        for label in self.labels:
+            if label == ref_label:
+                continue
+            
+            diff = self.interp_data[label] - ref_data
+            ax.plot(self.common_wavelength, diff, label=f"{label} - {ref_label}")
+            
+        ax.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        ax.set_xlabel("波长 (nm)")
+        ax.set_ylabel("反射率差异 (%)")
+        ax.set_title(f"相对于 {ref_label} 的差异")
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.7)
+        
+        self.diff_canvas.draw()
+
+    def setup_conclusion_tab(self):
+        """设置结论分析标签页"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # 控制区域
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("选择基准曲线:"))
+        self.conclusion_ref_combo = QComboBox()
+        self.conclusion_ref_combo.addItems(self.labels)
+        self.conclusion_ref_combo.currentTextChanged.connect(self.update_conclusion_table)
+        control_layout.addWidget(self.conclusion_ref_combo)
+        control_layout.addStretch()
+        layout.addLayout(control_layout)
+        
+        # 结论表格
+        self.conclusion_table = QTableWidget()
+        self.conclusion_table.setColumnCount(5)
+        self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "RMSE", "SAM (度)", "结论"])
+        self.conclusion_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.conclusion_table)
+        
+        # 阈值说明
+        note = QLabel("判定标准：相关系数 >= 0.95 且 SAM <= 5.0 度 判定为同种物质，否则为不同物质。")
+        note.setStyleSheet("color: gray; font-style: italic;")
+        layout.addWidget(note)
+        
+        self.tab_widget.addTab(tab, "分析结论")
+        
+        # 初始更新
+        if self.labels:
+            self.update_conclusion_table(self.labels[0])
+
+    def update_conclusion_table(self, ref_label):
+        """更新结论表格"""
+        if ref_label not in self.labels:
+            return
+
+        ref_idx = self.labels.index(ref_label)
+        
+        # 清空表格
+        self.conclusion_table.setRowCount(0)
+        
+        for i, label in enumerate(self.labels):
+            if i == ref_idx:
+                continue
+                
+            row = self.conclusion_table.rowCount()
+            self.conclusion_table.insertRow(row)
+            
+            # 获取指标
+            corr = self.corr_matrix[ref_idx, i]
+            rmse = self.rmse_matrix[ref_idx, i]
+            sam = self.sam_matrix[ref_idx, i]
+            
+            # 判定结论
+            is_same = corr >= 0.95 and sam <= 5.0
+            conclusion = "同种物质" if is_same else "不同物质"
+            
+            # 填充表格
+            self.conclusion_table.setItem(row, 0, QTableWidgetItem(label))
+            
+            item_corr = QTableWidgetItem(f"{corr:.4f}")
+            item_corr.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.conclusion_table.setItem(row, 1, item_corr)
+            
+            item_rmse = QTableWidgetItem(f"{rmse:.4f}")
+            item_rmse.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.conclusion_table.setItem(row, 2, item_rmse)
+            
+            item_sam = QTableWidgetItem(f"{sam:.2f}")
+            item_sam.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.conclusion_table.setItem(row, 3, item_sam)
+            
+            item_conclusion = QTableWidgetItem(conclusion)
+            item_conclusion.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if is_same:
+                item_conclusion.setBackground(QColor(200, 255, 200)) # Green
+            else:
+                item_conclusion.setBackground(QColor(255, 200, 200)) # Red
+            self.conclusion_table.setItem(row, 4, item_conclusion)
+
+
 class SpectralCanvas(QWidget):
     """用于显示光谱数据的画布类"""
 
@@ -2340,6 +2705,12 @@ class SpectralViewer(QMainWindow):
         self.analyze_btn.setEnabled(False)
         bottom_btn_layout.addWidget(self.analyze_btn)
 
+        # 添加多曲线相似性分析按钮
+        self.btn_multi_analysis = QPushButton('多曲线分析')
+        self.btn_multi_analysis.clicked.connect(self.analyze_multi_curves)
+        self.btn_multi_analysis.setEnabled(False)
+        bottom_btn_layout.addWidget(self.btn_multi_analysis)
+
         # 添加按钮布局到主布局
         load_layout.addLayout(bottom_btn_layout)
 
@@ -2661,6 +3032,7 @@ class SpectralViewer(QMainWindow):
             self.clear_btn.setEnabled(False)
             self.reload_btn.setEnabled(False)
             self.analyze_btn.setEnabled(False)  # 禁用分析按钮
+            self.btn_multi_analysis.setEnabled(False)
 
         # 更新图表
         self.update_plot()
@@ -2690,6 +3062,7 @@ class SpectralViewer(QMainWindow):
         self.clear_btn.setEnabled(False)
         self.reload_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)  # 禁用分析按钮
+        self.btn_multi_analysis.setEnabled(False)
 
         QMessageBox.information(self, "清空完成", f"已清空所有{self.get_data_type_name()}数据。")
 
@@ -2772,6 +3145,7 @@ class SpectralViewer(QMainWindow):
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
             self.analyze_btn.setEnabled(True)  # 启用分析按钮
+            self.btn_multi_analysis.setEnabled(True)
 
             # 选中第一个加载的文件
             if first_item:
@@ -3014,6 +3388,15 @@ class SpectralViewer(QMainWindow):
 
         except Exception as e:
             QMessageBox.warning(self, "分析错误", f"进行差异分析时出错: {str(e)}")
+
+    def analyze_multi_curves(self):
+        """进行多曲线相似性分析"""
+        if len(self.spectra_data[self.current_data_type]) < 2:
+            QMessageBox.warning(self, "无法分析", "需要至少2条曲线才能进行相似性分析。")
+            return
+            
+        dialog = MultiCurveAnalysisDialog(self, self.spectra_data[self.current_data_type])
+        dialog.exec_()
 
     def perform_spectral_analysis(self, spectra_dict):
         """执行光谱数据的统计分析
@@ -3887,6 +4270,7 @@ class SpectralViewer(QMainWindow):
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
             self.analyze_btn.setEnabled(True)
+            self.btn_multi_analysis.setEnabled(True)
 
             # 显示成功消息
             QMessageBox.information(self, "数据加载完成",
