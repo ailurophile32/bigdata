@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QGroupBox, QGridLayout, QMessageBox, QSizePolicy,
                             QMenu, QTextEdit, QDialog, QTableWidget,
                             QTableWidgetItem, QTabWidget, QHeaderView,
-                            QLineEdit, QListWidgetItem, QSlider, QScrollArea, QFrame)
+                            QLineEdit, QListWidgetItem, QSlider, QScrollArea, QFrame,
+                            QDoubleSpinBox, QFormLayout, QDialogButtonBox)
 from PySide6.QtCore import Qt, QDir, QPoint
 from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -1124,6 +1125,90 @@ class SingleCurveAnalysisDialog(BaseAnalysisDialog):
         self.tab_widget.addTab(tab, "标准比对")
 
 
+
+class CriteriaConfigDialog(QDialog):
+    """判定标准配置对话框"""
+    
+    def __init__(self, parent=None, current_criteria=None):
+        super().__init__(parent)
+        self.setWindowTitle("设置相似性判定标准")
+        self.setModal(True)
+        self.setFixedWidth(400)
+        
+        self.criteria = current_criteria or {}
+        
+        layout = QVBoxLayout(self)
+        
+        # 创建表单布局
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+        
+        # 相关系数 (高)
+        self.corr_high_spin = QDoubleSpinBox()
+        self.corr_high_spin.setRange(0.0, 1.0)
+        self.corr_high_spin.setSingleStep(0.01)
+        self.corr_high_spin.setDecimals(2)
+        self.corr_high_spin.setValue(self.criteria.get('corr_high', 0.95))
+        form_layout.addRow("相关系数 (判定为相同): >=", self.corr_high_spin)
+        
+        # 相关系数 (低)
+        self.corr_low_spin = QDoubleSpinBox()
+        self.corr_low_spin.setRange(0.0, 1.0)
+        self.corr_low_spin.setSingleStep(0.01)
+        self.corr_low_spin.setDecimals(2)
+        self.corr_low_spin.setValue(self.criteria.get('corr_low', 0.90))
+        form_layout.addRow("相关系数 (判定为不同): <", self.corr_low_spin)
+        
+        # SAM
+        self.sam_spin = QDoubleSpinBox()
+        self.sam_spin.setRange(0.0, 90.0)
+        self.sam_spin.setSingleStep(0.1)
+        self.sam_spin.setDecimals(1)
+        self.sam_spin.setValue(self.criteria.get('sam', 5.0))
+        self.sam_spin.setSuffix(" 度")
+        form_layout.addRow("光谱角 (SAM): <=", self.sam_spin)
+        
+        # SID
+        self.sid_spin = QDoubleSpinBox()
+        self.sid_spin.setRange(0.0, 1.0)
+        self.sid_spin.setSingleStep(0.001)
+        self.sid_spin.setDecimals(3)
+        self.sid_spin.setValue(self.criteria.get('sid', 0.03))
+        form_layout.addRow("光谱信息散度 (SID): <", self.sid_spin)
+        
+        # SID-SAM
+        self.sid_sam_spin = QDoubleSpinBox()
+        self.sid_sam_spin.setRange(0.0, 1.0)
+        self.sid_sam_spin.setSingleStep(0.001)
+        self.sid_sam_spin.setDecimals(3)
+        self.sid_sam_spin.setValue(self.criteria.get('sid_sam', 0.03))
+        form_layout.addRow("SID-SAM 混合度量: <", self.sid_sam_spin)
+        
+        layout.addLayout(form_layout)
+        
+        # 添加说明
+        note = QLabel("说明：需同时满足所有设定条件才判定为同种物质。")
+        note.setStyleSheet("color: gray; font-style: italic; margin-top: 10px;")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        
+        # 按钮
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+    def get_criteria(self):
+        """获取设置的判定标准"""
+        return {
+            'corr_high': self.corr_high_spin.value(),
+            'corr_low': self.corr_low_spin.value(),
+            'sam': self.sam_spin.value(),
+            'sid': self.sid_spin.value(),
+            'sid_sam': self.sid_sam_spin.value()
+        }
+
+
 class MultiCurveAnalysisDialog(BaseAnalysisDialog):
     """多曲线相似性分析对话框"""
 
@@ -1131,6 +1216,15 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         super().__init__(parent, "多曲线相似性分析")
         self.spectra_data = spectra_data
         self.labels = []
+        
+        # 默认判定标准配置
+        self.criteria = {
+            'corr_high': 0.95,  # 相关系数 >= 0.95 判定为相同
+            'corr_low': 0.90,   # 相关系数 < 0.90 判定为不同 (红色高亮)
+            'sam': 5.0,         # SAM <= 5.0 度 判定为相同
+            'sid': 0.03,        # SID < 0.03 判定为相似
+            'sid_sam': 0.03     # SID-SAM < 0.03 判定为相似
+        }
         
         # 初始化UI
         self.init_ui()
@@ -1289,7 +1383,25 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         btn_update.setDefault(True) 
         layout.addWidget(btn_update)
         
+        # 设置判定标准按钮
+        btn_criteria = QPushButton("设置判定标准")
+        btn_criteria.clicked.connect(self.show_criteria_dialog)
+        layout.addWidget(btn_criteria)
+        
         return panel
+
+    def show_criteria_dialog(self):
+        """显示判定标准设置对话框"""
+        dialog = CriteriaConfigDialog(self, self.criteria)
+        if dialog.exec_() == QDialog.Accepted:
+            self.criteria = dialog.get_criteria()
+            # 如果已有分析结果，更新显示
+            if self.labels:
+                self.tab_widget.clear()
+                self.setup_matrices_tab()
+                self.setup_difference_tab()
+                self.update_conclusion_panel()
+                QMessageBox.information(self, "设置更新", "判定标准已更新，分析结果已刷新。")
 
     def select_all(self):
         """全选"""
@@ -1401,17 +1513,21 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 # 简单的颜色高亮
                 if "Correlation" in title:
                     if i != j:
-                        if value >= 0.95:
+                        # 只有超出判定标准（异常/不同）才标黄
+                        if value < self.criteria['corr_high']:
                             item.setBackground(QColor(255, 255, 200)) # Yellow
-                        elif value < 0.9:
-                            item.setBackground(QColor(255, 200, 200)) # Red
                 elif "SID" in title or "SID-SAM" in title:
                     if i != j:
                         # Smaller is better
-                        if value < 0.05: # Thresholds might need tuning
+                        threshold = self.criteria['sid'] if "SID" in title and "SID-SAM" not in title else self.criteria['sid_sam']
+                        # 只有超出判定标准（异常/不同）才标黄
+                        if value > threshold: 
                             item.setBackground(QColor(255, 255, 200)) # Yellow
-                        elif value > 0.5:
-                            item.setBackground(QColor(255, 200, 200))
+                elif "SAM" in title:
+                    if i != j:
+                        # Smaller is better
+                        if value > self.criteria['sam']:
+                            item.setBackground(QColor(255, 255, 200)) # Yellow
                 
                 table.setItem(i, j, item)
                 
@@ -1494,13 +1610,13 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         
         # 结论表格
         self.conclusion_table = QTableWidget()
-        self.conclusion_table.setColumnCount(4)
-        self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "SAM (度)", "结论"])
+        self.conclusion_table.setColumnCount(6)
+        self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "SAM (度)", "SID", "SID-SAM", "结论"])
         self.conclusion_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.conclusion_layout.addWidget(self.conclusion_table)
         
-        # 阈值说明
-        note = QLabel("判定标准：相关系数 >= 0.95 且 SAM <= 5.0 度 判定为同种物质，否则为不同物质。")
+        # 判定标准说明
+        note = QLabel(f"判定标准：相关系数 >= {self.criteria['corr_high']:.2f} 且 SAM <= {self.criteria['sam']:.1f}° 且 SID < {self.criteria['sid']:.3f} 且 SID-SAM < {self.criteria['sid_sam']:.3f} 判定为同种物质。")
         note.setStyleSheet("color: gray; font-style: italic;")
         self.conclusion_layout.addWidget(note)
         
@@ -1528,9 +1644,14 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             # 获取指标
             corr = self.corr_matrix[ref_idx, i]
             sam = self.sam_matrix[ref_idx, i]
+            sid = self.sid_matrix[ref_idx, i]
+            sid_sam = self.sid_sam_matrix[ref_idx, i]
             
             # 判定结论
-            is_same = corr >= 0.95 and sam <= 5.0
+            is_same = (corr >= self.criteria['corr_high'] and 
+                       sam <= self.criteria['sam'] and 
+                       sid < self.criteria['sid'] and 
+                       sid_sam < self.criteria['sid_sam'])
             conclusion = "同种物质" if is_same else "不同物质"
             
             # 填充表格
@@ -1538,11 +1659,27 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             
             item_corr = QTableWidgetItem(f"{corr:.4f}")
             item_corr.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if corr < self.criteria['corr_high']:
+                item_corr.setForeground(QBrush(QColor(255, 0, 0)))
             self.conclusion_table.setItem(row, 1, item_corr)
             
             item_sam = QTableWidgetItem(f"{sam:.2f}")
             item_sam.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if sam > self.criteria['sam']:
+                item_sam.setForeground(QBrush(QColor(255, 0, 0)))
             self.conclusion_table.setItem(row, 2, item_sam)
+            
+            item_sid = QTableWidgetItem(f"{sid:.4f}")
+            item_sid.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if sid > self.criteria['sid']:
+                item_sid.setForeground(QBrush(QColor(255, 0, 0)))
+            self.conclusion_table.setItem(row, 3, item_sid)
+            
+            item_sid_sam = QTableWidgetItem(f"{sid_sam:.4f}")
+            item_sid_sam.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if sid_sam > self.criteria['sid_sam']:
+                item_sid_sam.setForeground(QBrush(QColor(255, 0, 0)))
+            self.conclusion_table.setItem(row, 4, item_sid_sam)
             
             item_conclusion = QTableWidgetItem(conclusion)
             item_conclusion.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1550,7 +1687,7 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 item_conclusion.setBackground(QColor(200, 255, 200)) # Green
             else:
                 item_conclusion.setBackground(QColor(255, 200, 200)) # Red
-            self.conclusion_table.setItem(row, 3, item_conclusion)
+            self.conclusion_table.setItem(row, 5, item_conclusion)
         
         self._adjust_table_height(self.conclusion_table)
 
