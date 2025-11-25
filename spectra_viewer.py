@@ -1182,15 +1182,17 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         """计算相似性矩阵"""
         n = len(self.labels)
         corr_matrix = np.zeros((n, n))
-        rmse_matrix = np.zeros((n, n))
         sam_matrix = np.zeros((n, n))
+        sid_matrix = np.zeros((n, n))
+        sid_sam_matrix = np.zeros((n, n))
         
         for i in range(n):
             for j in range(n):
                 if i == j:
                     corr_matrix[i, j] = 1.0
-                    rmse_matrix[i, j] = 0.0
                     sam_matrix[i, j] = 0.0
+                    sid_matrix[i, j] = 0.0
+                    sid_sam_matrix[i, j] = 0.0
                     continue
                 
                 data1 = self.interp_data[self.labels[i]]
@@ -1199,18 +1201,37 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 # Correlation
                 corr_matrix[i, j] = np.corrcoef(data1, data2)[0, 1]
                 
-                # RMSE
-                rmse_matrix[i, j] = np.sqrt(np.mean((data1 - data2)**2))
-                
                 # SAM
                 norm1 = data1 / np.linalg.norm(data1)
                 norm2 = data2 / np.linalg.norm(data2)
                 # Clip to avoid numerical errors
                 dot_product = np.clip(np.dot(norm1, norm2), -1.0, 1.0)
                 sam_rad = np.arccos(dot_product)
-                sam_matrix[i, j] = np.degrees(sam_rad)
+                sam_deg = np.degrees(sam_rad)
+                sam_matrix[i, j] = sam_deg
                 
-        return corr_matrix, rmse_matrix, sam_matrix
+                # SID (Spectral Information Divergence)
+                # Normalize to probability distributions (sum to 1)
+                # Ensure no negative values (spectra should be positive) and no zeros
+                p = np.maximum(data1, 1e-10)
+                q = np.maximum(data2, 1e-10)
+                p = p / np.sum(p)
+                q = q / np.sum(q)
+                
+                # SID = D(p||q) + D(q||p)
+                # D(p||q) = sum(p * log(p/q))
+                d_pq = np.sum(p * np.log(p / q))
+                d_qp = np.sum(q * np.log(q / p))
+                sid = d_pq + d_qp
+                sid_matrix[i, j] = sid
+                
+                # SID-SAM Hybrid Measure
+                # SID-SAM = SID * tan(SAM)
+                # SAM must be in radians
+                sid_sam = sid * np.tan(sam_rad)
+                sid_sam_matrix[i, j] = sid_sam
+                
+        return corr_matrix, sam_matrix, sid_matrix, sid_sam_matrix
 
     def init_ui(self):
         """初始化UI"""
@@ -1304,7 +1325,7 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             return
 
         # 重新计算指标
-        self.corr_matrix, self.rmse_matrix, self.sam_matrix = self.calculate_metrics()
+        self.corr_matrix, self.sam_matrix, self.sid_matrix, self.sid_sam_matrix = self.calculate_metrics()
         
         # 重建标签页
         self.tab_widget.clear()
@@ -1333,18 +1354,23 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         layout.addWidget(self.create_matrix_table(self.corr_matrix, "相关系数 (Correlation)"))
         layout.addSpacing(10)
         
-        # 2. RMSE
-        layout.addWidget(QLabel("<b>均方根误差 (RMSE)</b>"))
-        layout.addWidget(self.create_matrix_table(self.rmse_matrix, "均方根误差 (RMSE)"))
-        layout.addSpacing(10)
-        
-        # 3. SAM
+        # 2. SAM
         layout.addWidget(QLabel("<b>光谱角 (SAM, 度)</b>"))
         layout.addWidget(self.create_matrix_table(self.sam_matrix, "光谱角 (SAM, 度)"))
         layout.addSpacing(10)
+
+        # 3. SID
+        layout.addWidget(QLabel("<b>光谱信息散度 (SID)</b>"))
+        layout.addWidget(self.create_matrix_table(self.sid_matrix, "光谱信息散度 (SID)"))
+        layout.addSpacing(10)
+
+        # 4. SID-SAM
+        layout.addWidget(QLabel("<b>SID-SAM 混合度量</b>"))
+        layout.addWidget(self.create_matrix_table(self.sid_sam_matrix, "SID-SAM 混合度量"))
+        layout.addSpacing(10)
         
         # 添加说明
-        note = QLabel("说明：\n1. 相关系数：接近1表示形状高度相似。\n2. RMSE：值越小表示数值差异越小。\n3. SAM：值越小表示光谱形状越相似（角度越小）。")
+        note = QLabel("说明：\n1. 相关系数：接近1表示形状高度相似。\n2. SAM：值越小表示光谱形状越相似（角度越小）。\n3. SID：值越小表示概率分布越相似。\n4. SID-SAM：结合了SID和SAM，值越小表示越相似，对细微差异更敏感。")
         note.setStyleSheet("color: gray; font-style: italic; margin-top: 10px;")
         layout.addWidget(note)
         
@@ -1375,16 +1401,16 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 # 简单的颜色高亮
                 if "Correlation" in title:
                     if i != j:
-                        if value > 0.99:
-                            item.setBackground(QColor(200, 255, 200)) # Green
+                        if value >= 0.95:
+                            item.setBackground(QColor(255, 255, 200)) # Yellow
                         elif value < 0.9:
                             item.setBackground(QColor(255, 200, 200)) # Red
-                elif "RMSE" in title:
-                     if i != j:
-                        # Normalize roughly for coloring (assuming RMSE < 10 is good)
-                        if value < 2.0:
-                            item.setBackground(QColor(200, 255, 200))
-                        elif value > 10.0:
+                elif "SID" in title or "SID-SAM" in title:
+                    if i != j:
+                        # Smaller is better
+                        if value < 0.05: # Thresholds might need tuning
+                            item.setBackground(QColor(255, 255, 200)) # Yellow
+                        elif value > 0.5:
                             item.setBackground(QColor(255, 200, 200))
                 
                 table.setItem(i, j, item)
@@ -1468,8 +1494,8 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
         
         # 结论表格
         self.conclusion_table = QTableWidget()
-        self.conclusion_table.setColumnCount(5)
-        self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "RMSE", "SAM (度)", "结论"])
+        self.conclusion_table.setColumnCount(4)
+        self.conclusion_table.setHorizontalHeaderLabels(["对比曲线", "相关系数", "SAM (度)", "结论"])
         self.conclusion_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.conclusion_layout.addWidget(self.conclusion_table)
         
@@ -1501,7 +1527,6 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             
             # 获取指标
             corr = self.corr_matrix[ref_idx, i]
-            rmse = self.rmse_matrix[ref_idx, i]
             sam = self.sam_matrix[ref_idx, i]
             
             # 判定结论
@@ -1515,13 +1540,9 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
             item_corr.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.conclusion_table.setItem(row, 1, item_corr)
             
-            item_rmse = QTableWidgetItem(f"{rmse:.4f}")
-            item_rmse.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.conclusion_table.setItem(row, 2, item_rmse)
-            
             item_sam = QTableWidgetItem(f"{sam:.2f}")
             item_sam.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.conclusion_table.setItem(row, 3, item_sam)
+            self.conclusion_table.setItem(row, 2, item_sam)
             
             item_conclusion = QTableWidgetItem(conclusion)
             item_conclusion.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1529,7 +1550,7 @@ class MultiCurveAnalysisDialog(BaseAnalysisDialog):
                 item_conclusion.setBackground(QColor(200, 255, 200)) # Green
             else:
                 item_conclusion.setBackground(QColor(255, 200, 200)) # Red
-            self.conclusion_table.setItem(row, 4, item_conclusion)
+            self.conclusion_table.setItem(row, 3, item_conclusion)
         
         self._adjust_table_height(self.conclusion_table)
 
