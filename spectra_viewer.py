@@ -3081,6 +3081,12 @@ class SpectralViewer(QMainWindow):
         for default_wl in [532, 671, 780, 1020]:
             self.wavelength_list.addItem(f"{default_wl:.1f}")
 
+        # 默认不显示波长标记
+        self.show_wavelength_markers = False
+
+        # 默认不显示波长标记
+        self.show_wavelength_markers = False
+
         # 添加操作按钮
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)  # 设置按钮之间的间距
@@ -3537,14 +3543,16 @@ class SpectralViewer(QMainWindow):
                             self.canvas.update_highlight(line)
                             break
 
-                # 如果有波长标记，重新添加
+                # 如果有波长标记且允许显示，重新添加
                 if hasattr(self, 'wavelength_list') and self.wavelength_list.count() > 0:
-                    wavelengths = []
-                    for i in range(self.wavelength_list.count()):
-                        wavelengths.append(float(self.wavelength_list.item(i).text()))
+                    # 检查是否允许显示标记
+                    if hasattr(self, 'show_wavelength_markers') and self.show_wavelength_markers:
+                        wavelengths = []
+                        for i in range(self.wavelength_list.count()):
+                            wavelengths.append(float(self.wavelength_list.item(i).text()))
 
-                    if wavelengths:
-                        self.canvas.add_wavelength_markers(wavelengths)
+                        if wavelengths:
+                            self.canvas.add_wavelength_markers(wavelengths)
                 
                 # 强制刷新画布以确保峰谷标记正确显示
                 self.canvas.canvas.draw()
@@ -4632,6 +4640,9 @@ class SpectralViewer(QMainWindow):
             QMessageBox.information(self, "未选择波长", "请先添加要标记的波长")
             return
 
+        # 设置显示标记标志
+        self.show_wavelength_markers = True
+
         # 先清除现有标记
         self.canvas.clear_wavelength_markers()
 
@@ -4782,6 +4793,7 @@ class SpectralViewer(QMainWindow):
 
     def clear_wavelength_marks(self):
         """清除所有波长标记和分析结果"""
+        self.show_wavelength_markers = False
         self.canvas.clear_wavelength_markers()
         # 清空分析结果显示
         self.wavelength_analysis_result.clear()
@@ -5156,6 +5168,9 @@ class WavelengthAnalysisDialog(BaseAnalysisDialog):
         if not wavelengths:
             QMessageBox.information(self, "未选择波长", "请先添加要标记的波长")
             return
+
+        # 设置显示标记标志
+        self.show_wavelength_markers = True
 
         # 先清除现有标记
         self.canvas.clear_wavelength_markers()
