@@ -1193,11 +1193,29 @@ class CriteriaConfigDialog(QDialog):
         layout.addWidget(note)
         
         # 按钮
+        buttons_layout = QHBoxLayout()
+        
+        self.btn_restore = QPushButton("恢复默认值")
+        self.btn_restore.clicked.connect(self.reset_defaults)
+        buttons_layout.addWidget(self.btn_restore)
+        
+        buttons_layout.addStretch()
+        
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        buttons_layout.addWidget(buttons)
         
+        layout.addLayout(buttons_layout)
+        
+    def reset_defaults(self):
+        """恢复默认值"""
+        self.corr_high_spin.setValue(0.95)
+        self.corr_low_spin.setValue(0.90)
+        self.sam_spin.setValue(5.0)
+        self.sid_spin.setValue(0.03)
+        self.sid_sam_spin.setValue(0.03)
+
     def get_criteria(self):
         """获取设置的判定标准"""
         return {
