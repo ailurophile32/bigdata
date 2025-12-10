@@ -2158,10 +2158,25 @@ class SpectralCanvas(QWidget):
             else:  # absorbance
                 self.axes.set_ylabel('吸收率 (Intensity)')
         
-        # 强制 Y 轴自适应数据范围
-        self.axes.autoscale(enable=True, axis='y', tight=True)
-        self.axes.relim()  # 重新计算数据限制
-        self.axes.autoscale_view(scalex=False, scaley=True)  # 只自适应 Y 轴
+        # 根据Y轴模式设置范围
+        if y_axis_mode == 'percent':
+            # 百分数模式：Y轴最大值固定为100%，最小值自适应数据
+            self.axes.autoscale(enable=True, axis='y', tight=True)
+            self.axes.relim()  # 重新计算数据限制
+            self.axes.autoscale_view(scalex=False, scaley=True)  # 先自适应得到最小值
+            
+            # 获取当前自动计算的Y轴范围
+            y_min, y_max = self.axes.get_ylim()
+            
+            # 固定最大值为100，保留自适应的最小值（向下取整到合适的刻度）
+            # 计算合适的最小值刻度（向下取整到5的倍数）
+            y_min_adjusted = max(0, np.floor(y_min / 5) * 5)
+            self.axes.set_ylim(y_min_adjusted, 100)
+        else:
+            # 光强值模式：完全自适应数据范围
+            self.axes.autoscale(enable=True, axis='y', tight=True)
+            self.axes.relim()  # 重新计算数据限制
+            self.axes.autoscale_view(scalex=False, scaley=True)  # 只自适应 Y 轴
             
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_title(title)
