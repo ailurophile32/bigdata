@@ -3409,8 +3409,6 @@ class SpectralViewer(QMainWindow):
         self.analyze_btn.setEnabled(False)  # 禁用分析按钮
         self.btn_multi_analysis.setEnabled(False)
 
-        QMessageBox.information(self, "清空完成", f"已清空所有{self.get_data_type_name()}数据。")
-
     def load_data_folder(self):
         """加载数据文件夹并处理所有CSV文件"""
         folder_path = QFileDialog.getExistingDirectory(self, "选择数据文件夹",
