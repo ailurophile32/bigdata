@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QTableWidgetItem, QTabWidget, QHeaderView,
                             QLineEdit, QListWidgetItem, QSlider, QScrollArea, QFrame,
                             QDoubleSpinBox, QFormLayout, QDialogButtonBox)
-from PySide6.QtCore import Qt, QDir, QPoint
-from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction
+from PySide6.QtCore import Qt, QDir, QPoint, Signal
+from PySide6.QtGui import QColor, QFont, QBrush, QTextDocument, QAction, QPainter, QPen
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 import random
 import matplotlib
@@ -59,7 +59,68 @@ def create_toolbar(canvas, parent):
 
     # 不再添加"重置视图"和"切换网格"按钮，按照用户要求
 
+
     return toolbar
+
+class FileDropListWidget(QListWidget):
+    """支持文件拖放的列表控件"""
+    filesDropped = Signal(list)  # 发送拖放的文件路径列表
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.DragDrop)
+        self.setSelectionMode(QListWidget.ExtendedSelection)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.count() == 0:
+            painter = QPainter(self.viewport())
+            painter.save()
+            
+            # 设置更有质感的灰色
+            color = QColor(160, 160, 160)
+            painter.setPen(QPen(color))
+            
+            # 使用现有字体
+            font = self.font()
+            # 稍微加大字体
+            font.setPointSize(font.pointSize() + 2)
+            painter.setFont(font)
+            
+            # 绘制文本
+            text = "拖入数据文件到此处\n(支持文件夹或CSV文件)"
+            rect = self.viewport().rect()
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+            
+            painter.restore()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            
+            file_paths = []
+            for url in event.mimeData().urls():
+                file_paths.append(url.toLocalFile())
+            
+            if file_paths:
+                self.filesDropped.emit(file_paths)
+        else:
+            super().dropEvent(event)
+
 
 class BaseAnalysisDialog(QDialog):
     """分析对话框的基类"""
@@ -1831,13 +1892,14 @@ class SpectralCanvas(QWidget):
         # 使用draw_idle延迟绘制
         self.canvas.draw_idle()
 
-    def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None):
+    def plot_spectra(self, spectra_dict, title="反射率光谱对比图", reference_curve=None, y_axis_mode='percent'):
         """绘制多条光谱曲线
 
         Args:
             spectra_dict: 包含多个光谱数据的字典 {显示标签: (波长数组, 反射率/透射率/吸收率数组)}
             title: 图表标题
             reference_curve: 标准曲线的名称
+            y_axis_mode: Y 轴显示模式 'percent' (百分数) 或 'intensity' (光强值)
         """
         self.axes.clear()
         self.lines = []
@@ -2080,13 +2142,26 @@ class SpectralCanvas(QWidget):
                                         xytext=(0, -25), ha='center', fontsize=9, color='blue',
                                         bbox=dict(facecolor='white', alpha=0.85, edgecolor='none', pad=1), zorder=16)
 
-        # 根据数据类型设置Y轴标签
-        if data_type == "reflectance":
-            self.axes.set_ylabel('反射率 (%)')
-        elif data_type == "transmittance":
-            self.axes.set_ylabel('透射率 (%)')
-        else:  # absorbance
-            self.axes.set_ylabel('吸收率 (%)')
+        # 根据数据类型和 Y 轴模式设置标签
+        if y_axis_mode == 'percent':
+            if data_type == "reflectance":
+                self.axes.set_ylabel('反射率 (%)')
+            elif data_type == "transmittance":
+                self.axes.set_ylabel('透射率 (%)')
+            else:  # absorbance
+                self.axes.set_ylabel('吸收率 (%)')
+        else:  # intensity
+            if data_type == "reflectance":
+                self.axes.set_ylabel('反射率 (Intensity)')
+            elif data_type == "transmittance":
+                self.axes.set_ylabel('透射率 (Intensity)')
+            else:  # absorbance
+                self.axes.set_ylabel('吸收率 (Intensity)')
+        
+        # 强制 Y 轴自适应数据范围
+        self.axes.autoscale(enable=True, axis='y', tight=True)
+        self.axes.relim()  # 重新计算数据限制
+        self.axes.autoscale_view(scalex=False, scaley=True)  # 只自适应 Y 轴
             
         self.axes.set_xlabel('波长 (nm)')
         self.axes.set_title(title)
@@ -2860,6 +2935,7 @@ class SpectralViewer(QMainWindow):
         self.detail_btn = None  # 查看详细结果按钮
         self.current_data_type = 'reflectance'  # 当前选择的数据类型
         self.data_pairs = {}  # 存储反射率-透射率数据对 {吸收率标签: (反射率标签, 透射率标签)}
+        self.y_axis_mode = 'percent'  # Y 轴显示模式：'percent' (百分数) 或 'intensity' (光强值)
 
         self.initUI()
 
@@ -2959,7 +3035,8 @@ class SpectralViewer(QMainWindow):
         load_layout.addWidget(file_list_label)
 
         # 数据文件列表（用于显示已加载的文件，支持右键菜单删除）
-        self.file_list = QListWidget()
+        self.file_list = FileDropListWidget()
+        self.file_list.filesDropped.connect(self.handle_dropped_files)
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_list.setToolTip("右键点击列表项可以删除文件")
@@ -3016,6 +3093,16 @@ class SpectralViewer(QMainWindow):
         self.grid_cb.setChecked(True)
         self.grid_cb.stateChanged.connect(self.on_grid_changed)
         plot_control_layout.addWidget(self.grid_cb)
+
+        # 添加 Y 轴显示模式切换
+        y_axis_layout = QHBoxLayout()
+        y_axis_layout.addWidget(QLabel("Y轴显示:"))
+        self.y_axis_mode_combo = QComboBox()
+        self.y_axis_mode_combo.addItems(["百分数 (%)", "Intensity"])
+        self.y_axis_mode_combo.currentIndexChanged.connect(self.on_y_axis_mode_changed)
+        y_axis_layout.addWidget(self.y_axis_mode_combo)
+        y_axis_layout.addStretch(1)
+        plot_control_layout.addLayout(y_axis_layout)
 
         # 添加峰谷标记点显示选项
         self.peakvalley_cb = QCheckBox("显示峰谷标记点")
@@ -3329,7 +3416,10 @@ class SpectralViewer(QMainWindow):
             self.spectra_data[self.current_data_type].clear()
 
         self.base_folder = folder_path
+        self._load_data_from_folder(folder_path)
 
+    def _load_data_from_folder(self, folder_path):
+        """从文件夹加载数据"""
         # 遍历文件夹中的所有子文件夹
         files_loaded = 0
         first_item = None
@@ -3548,7 +3638,7 @@ class SpectralViewer(QMainWindow):
                 title = f"{self.get_data_type_name()}光谱对比图"
                 
                 # 更新图表
-                self.canvas.plot_spectra(filtered_data, title=title, reference_curve=reference_curve)
+                self.canvas.plot_spectra(filtered_data, title=title, reference_curve=reference_curve, y_axis_mode=self.y_axis_mode)
 
                 # 如果有选中文件，高亮对应曲线
                 if selected_curve:
@@ -3597,6 +3687,12 @@ class SpectralViewer(QMainWindow):
 
         # 重绘画布
         self.canvas.draw()
+
+    def on_y_axis_mode_changed(self, index):
+        """处理 Y 轴显示模式变更"""
+        modes = ['percent', 'intensity']
+        self.y_axis_mode = modes[index]
+        self.update_plot()
 
     def analyze_spectra(self):
         """分析光谱数据的差异并生成分析报告"""
@@ -4478,6 +4574,10 @@ class SpectralViewer(QMainWindow):
         if not file_path:
             return
 
+        self._load_single_csv(file_path)
+
+    def _load_single_csv(self, file_path):
+        """加载单个CSV文件的具体实现"""
         try:
             # 读取文件
             wavelength, reflectance = self.read_spectral_data(file_path)
@@ -4505,28 +4605,41 @@ class SpectralViewer(QMainWindow):
                 item.setForeground(QBrush(QColor("green")))
             elif self.current_data_type == 'absorbance':
                 item.setForeground(QBrush(QColor("red")))
-                
+
             self.file_list.addItem(item)
-            
-            # 选中新添加的条目
-            self.file_list.setCurrentItem(item)
 
             # 启用按钮
             self.reload_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
-            self.analyze_btn.setEnabled(True)
+            self.analyze_btn.setEnabled(True)  # 启用分析按钮
             self.btn_multi_analysis.setEnabled(True)
 
-            # 显示成功消息
-            QMessageBox.information(self, "数据加载完成",
-                                  f"已加载CSV文件: {file_name}")
+            # 选中新添加的文件
+            self.file_list.setCurrentItem(item)
 
             # 自动更新图表
             self.update_plot()
 
         except Exception as e:
-            QMessageBox.critical(self, "加载错误",
-                                f"无法加载文件 {file_path}:\n{str(e)}")
+            QMessageBox.critical(self, "加载失败", f"无法加载文件: {str(e)}")
+
+    def handle_dropped_files(self, file_paths):
+        """处理拖放的文件列表"""
+        loaded_count = 0
+        
+        for file_path in file_paths:
+            # 检查是否是文件夹
+            if os.path.isdir(file_path):
+                self.base_folder = file_path # 更新基础文件夹为拖放的文件夹
+                self._load_data_from_folder(file_path)
+                loaded_count += 1
+            # 检查是否是CSV文件
+            elif os.path.isfile(file_path) and file_path.lower().endswith('.csv'):
+                self._load_single_csv(file_path)
+                loaded_count += 1
+        
+        if loaded_count == 0:
+            QMessageBox.information(self, "提示", "请拖放CSV文件或包含CSV文件的文件夹。")
 
     def set_reference_curve(self, curve_name):
         """设置指定曲线为标准曲线
